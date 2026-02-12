@@ -1,0 +1,33 @@
+/*
+ * Copyright (c) 2015 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: LicenseRef-Nordic-4-Clause
+ */
+
+@use 'sass:color';
+@import '~@nordicsemiconductor/pc-nrfconnect-shared/styles';
+
+.readback-protection-warning {
+    gap: 8px;
+
+    button {
+        border: 1px solid #b75300;
+        color: #b75300;
+        background-color: white;
+
+        &:hover:not([disabled]) {
+            color: #b75300;
+            background-color: white;
+            border-color: #b75300;
+        }
+
+        &:focus:not([disabled]) {
+            background-color: white;
+            border-color: #b75300 !important;
+        }
+
+        &:active:not([disabled]) {
+            background-color: color.scale(white, $lightness: -10%);
+        }
+    }
+}

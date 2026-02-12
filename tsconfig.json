@@ -1,0 +1,3 @@
+{
+    "extends": "@nordicsemiconductor/pc-nrfconnect-shared/config/tsconfig.json"
+}
