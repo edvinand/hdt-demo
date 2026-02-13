@@ -106,6 +106,15 @@ const throughputLabelPlugin = {
                     seconds,
                 ).padStart(2, '0')}`;
 
+                // Timestamp for right side (best/fastest completion time)
+                const bestCompletedMs = (fileTransferDataset as any)?.bestCompletedMs?.[index] ?? 0;
+                const bestTotalSeconds = Math.floor(bestCompletedMs / 1000);
+                const bestMinutes = Math.floor(bestTotalSeconds / 60);
+                const bestSeconds = bestTotalSeconds % 60;
+                const bestTimeLabel = `${String(bestMinutes).padStart(2, '0')}:${String(
+                    bestSeconds,
+                ).padStart(2, '0')}`;
+
                 ctx.fillStyle = color.label;
                 ctx.font =
                     '16px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
@@ -116,6 +125,15 @@ const throughputLabelPlugin = {
                         clampedPercent,
                     )}% of 100MB (${timeLabel})`,
                     xLeft + 4,
+                    trackY + trackHeight - 2,
+                );
+
+                // Timestamp label on the right side of the bar (best completion time so far)
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'bottom';
+                ctx.fillText(
+                    `(${bestTimeLabel})`,
+                    xLeft + trackWidth - 4,
                     trackY + trackHeight - 2,
                 );
                 ctx.restore();
@@ -298,14 +316,32 @@ export default () => {
     const maxValue = Math.max(1, ...phyThroughput, ...phyMaxThroughput);
     const [now, setNow] = useState(() => Date.now());
     const [stickyMax, setStickyMax] = useState(maxValue);
-    const HIGHLIGHT_MS = 500;
+    const [lastUpdatedPhyIndex, setLastUpdatedPhyIndex] = useState<number>(-1);
     const [fileTransferProgress, setFileTransferProgress] = useState<
         number[]
     >(() => new Array(phyThroughput.length).fill(0));
     const [fileTransferElapsedMs, setFileTransferElapsedMs] = useState<
         number[]
     >(() => new Array(phyThroughput.length).fill(0));
+    const [bestCompletedElapsedMs, setBestCompletedElapsedMs] = useState<
+        number[]
+    >(() => new Array(phyThroughput.length).fill(0));
     const lastTickRef = useRef(now);
+
+    useEffect(() => {
+        // Find which PHY was most recently updated
+        let maxUpdatedAt = -Infinity;
+        let lastUpdatedIndex = -1;
+
+        phyUpdatedAt.forEach((updatedAt, index) => {
+            if (updatedAt && updatedAt > maxUpdatedAt) {
+                maxUpdatedAt = updatedAt;
+                lastUpdatedIndex = index;
+            }
+        });
+
+        setLastUpdatedPhyIndex(lastUpdatedIndex);
+    }, [phyUpdatedAt]);
 
     useEffect(() => {
         setStickyMax(prev => Math.max(prev, maxValue));
@@ -371,7 +407,28 @@ export default () => {
                 return elapsed + dtMs;
             }),
         );
-    }, [now, activeThroughput, fileTransferProgress]);
+
+        setBestCompletedElapsedMs(prevBest =>
+            prevBest.map((best, index) => {
+                const throughputKbps = activeThroughput[index] ?? 0;
+                if (throughputKbps <= 0) return best;
+
+                const fileSizeBits = 100 * 1024 * 1024 * 8;
+                const delta =
+                    (throughputKbps * dtMs * 100) / fileSizeBits;
+                const currentProgress = fileTransferProgress[index] ?? 0;
+                const nextProgress = currentProgress + delta;
+
+                // When progress reaches 100%, update bestCompletedElapsedMs if this time is better (lower)
+                if (nextProgress >= 100) {
+                    const completedTime = (fileTransferElapsedMs[index] ?? 0) + dtMs;
+                    return best === 0 ? completedTime : Math.min(best, completedTime);
+                }
+
+                return best;
+            }),
+        );
+    }, [now, activeThroughput, fileTransferProgress, fileTransferElapsedMs, bestCompletedElapsedMs]);
 
     return (
         <div className="d-flex flex-column h-100">
@@ -427,6 +484,10 @@ export default () => {
                                         index =>
                                             fileTransferElapsedMs[index] ?? 0,
                                     ),
+                                    bestCompletedMs: enabledIndices.map(
+                                        index =>
+                                            bestCompletedElapsedMs[index] ?? 0,
+                                    ),
                                     datalabels: {
                                         display: false,
                                     },
@@ -434,14 +495,8 @@ export default () => {
                                 {
                                     label: 'Throughput',
                                     backgroundColor: enabledIndices.map(
-                                        index => {
-                                            const updatedAt =
-                                                phyUpdatedAt[index];
-                                            if (
-                                                updatedAt &&
-                                                now - updatedAt <
-                                                    HIGHLIGHT_MS
-                                            ) {
+                                        (index) => {
+                                            if (index === lastUpdatedPhyIndex) {
                                                 return color.bar.highlight;
                                             }
                                             return color.bar.normal;
