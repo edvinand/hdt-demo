@@ -14,6 +14,7 @@ import {
     getRssiDevice,
     getPhyEnabled,
     loadDefaultConfig,
+    applyCurrentPhyEnabled,
 } from '../../features/throughputDevice/throughputDeviceSlice';
 
 export default () => {
@@ -27,7 +28,8 @@ export default () => {
         if (!isConnected) return;
 
         rssiDevice?.writeConfig({ delay, phyEnabled });
-    }, [delay, isConnected, phyEnabled, rssiDevice]);
+        dispatch(applyCurrentPhyEnabled());
+    }, [delay, dispatch, isConnected, phyEnabled, rssiDevice]);
 
     const loadDefaults = useCallback(() => {
         dispatch(loadDefaultConfig());

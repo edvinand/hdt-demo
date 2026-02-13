@@ -12,8 +12,7 @@ import {
     getPhyEnabled,
     setPhyEnabled,
 } from '../../features/throughputDevice/throughputDeviceSlice';
-
-const PHY_LABELS = ['PHY 1', 'PHY 2', 'PHY 3', 'PHY 4', 'PHY 5'];
+import { PHY_LABELS } from '../../features/throughputDevice/phyLabels';
 
 const ConfigPhySelector = () => {
     const dispatch = useDispatch();
@@ -31,7 +30,9 @@ const ConfigPhySelector = () => {
                             key={label}
                             className="tw-flex tw-items-center tw-justify-between"
                         >
-                            <span>{label}</span>
+                            <span className="tw-inline-block tw-w-24 tw-whitespace-nowrap">
+                                {label}
+                            </span>
                             <StateSelector
                                 items={['Off', 'On']}
                                 selectedItem={selectedItem}

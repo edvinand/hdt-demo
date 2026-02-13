@@ -7,13 +7,13 @@
 import { colors } from '@nordicsemiconductor/pc-nrfconnect-shared';
 
 export default {
-    label: colors.gray300,
+    label: colors.black,
     bar: {
-        normal: colors.blueSlateLighter,
+        normal: colors.lightBlue200,
         normalMax: colors.blueSlate,
         highlight: colors.blueSlate,
         advertisement: colors.green,
         advertisementMax: colors.green200,
-        background: colors.gray50,
+        background: colors.gray100,
     },
 };

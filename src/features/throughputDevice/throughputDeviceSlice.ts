@@ -21,6 +21,7 @@ interface RssiState {
     delay: number;
     noDataReceived: boolean;
     phyEnabled: boolean[];
+    appliedPhyEnabled: boolean[];
     phyThroughput: number[];
     phyUpdatedAt: number[];
     phyMaxThroughput: number[];
@@ -37,6 +38,7 @@ const initialState: RssiState = {
     delay: 5,
     noDataReceived: false,
     phyEnabled: [true, true, true, true, true],
+    appliedPhyEnabled: [true, true, true, true, true],
     phyThroughput: [0, 0, 0, 0, 0],
     phyUpdatedAt: [0, 0, 0, 0, 0],
     phyMaxThroughput: [0, 0, 0, 0, 0],
@@ -85,6 +87,10 @@ const rssiSlice = createSlice({
             state.phyEnabled = [...initialState.phyEnabled];
         },
 
+        applyCurrentPhyEnabled: state => {
+            state.appliedPhyEnabled = [...state.phyEnabled];
+        },
+
         setDelay: (state, action: PayloadAction<number>) => {
             state.delay = action.payload;
         },
@@ -123,18 +129,27 @@ const rssiSlice = createSlice({
             if (state.buffer.length > 246) {
                 state.buffer.splice(0, state.buffer.length - 246);
             }
-            while (state.buffer.length >= 3) {
+
+            // Expect frames of the form:
+            // [0xff][phy][throughput_hi][throughput_lo]
+            // where throughput is a 16-bit value (kbps).
+            while (state.buffer.length >= 4) {
+                // Discard until we find the frame marker 0xff
                 while (state.buffer.length && state.buffer.shift() !== 0xff);
 
-                const [phy, throughput] = state.buffer.splice(0, 2);
-                if (phy !== 0xff && throughput !== 0xff) {
-                    if (phy >= 0 && phy < state.phyThroughput.length) {
-                        state.phyThroughput[phy] = throughput;
-                        state.phyUpdatedAt[phy] = Date.now();
-                        const currentMax = state.phyMaxThroughput[phy] ?? 0;
-                        if (throughput > currentMax) {
-                            state.phyMaxThroughput[phy] = throughput;
-                        }
+                // Need at least PHY + 2 throughput bytes remaining
+                if (state.buffer.length < 3) break;
+
+                const [phy, throughputHi, throughputLo] =
+                    state.buffer.splice(0, 3);
+                const throughput = (throughputHi << 8) | throughputLo;
+
+                if (phy >= 0 && phy < state.phyThroughput.length) {
+                    state.phyThroughput[phy] = throughput;
+                    state.phyUpdatedAt[phy] = Date.now();
+                    const currentMax = state.phyMaxThroughput[phy] ?? 0;
+                    if (throughput > currentMax) {
+                        state.phyMaxThroughput[phy] = throughput;
                     }
                 }
             }
@@ -163,6 +178,8 @@ export const getNoDataReceived = (state: RootState) =>
     state.app.rssi.noDataReceived;
 
 export const getPhyEnabled = (state: RootState) => state.app.rssi.phyEnabled;
+export const getAppliedPhyEnabled = (state: RootState) =>
+    state.app.rssi.appliedPhyEnabled;
 export const getPhyThroughput = (state: RootState) =>
     state.app.rssi.phyThroughput;
 export const getPhyUpdatedAt = (state: RootState) =>
@@ -180,6 +197,7 @@ export const {
     clearRssiData,
     setDelay,
     setPhyEnabled,
+    applyCurrentPhyEnabled,
     loadDefaultConfig,
     logUart,
     onReceiveRssiData,
