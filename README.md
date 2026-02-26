@@ -7,6 +7,7 @@ If you want to change something, you can save this repository to:
 %USER%\.nrfconnect-apps\local
 then run the command: 
 `npm run watch`
+To use this command, please check the documentation: [Installing developments tools](https://nordicsemiconductor.github.io/pc-nrfconnect-docs/getting_started#installing-development-tools)
 
 To generate an updated .tgz file for drag and drop, run the command:
 `npm pack --ignore-scripts`
