@@ -2,8 +2,8 @@
 
 ## Installation
 
-For testing purposes, drag the and drop the .tgz file into the nRF Connect for Desktop (NCD) Launcher.
-If you want to change something, you can save this to:
+For testing purposes, drag the and drop the `hdt-demo-0.1.0.tgz` file into the nRF Connect for Desktop (NCD) Launcher.
+If you want to change something, you can save this repository to:
 %USER%\.nrfconnect-apps\local
 then run the command: 
 `npm run watch`
@@ -18,7 +18,7 @@ To remove it, just delete this file from that location.
 
 ## Documentation
 For info on how to build nRF Connect for Desktop apps, please see:
-https://github.com/NordicSemiconductor/pc-nrfconnect-docs/blob/main/create_new_app.md
+https://nordicsemiconductor.github.io/pc-nrfconnect-docs/
 
 
 ## Embedded firmware
