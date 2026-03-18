@@ -1,0 +1,19 @@
+Make 100MB configureable
+Move throughput speed inside bar
+
+progress bars
+Toggleable theoretical maximums
+Reposition active bars
+Multiple reports per PHY cycle
+
+
+Upload demo
+Implement the throughput 1/2MBPS
+
+Change phy after a complete file transfer
+Reset progress
+Change the size of the file transferred. 
+two pairs of demos?
+Channel map selection hidden in "advanced".
+
+
