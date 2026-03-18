@@ -8,6 +8,9 @@ import { SerialPort } from 'serialport';
 
 export type RssiDevice = Awaited<ReturnType<typeof createRssiDevice>>;
 
+const clamp = (value: number, min: number, max: number) =>
+    Math.max(min, Math.min(max, value));
+
 export const createRssiDevice = (serialPort: SerialPort) => {
     let logger:
         | ((entry: { direction: 'tx' | 'rx'; data: string }) => void)
@@ -29,10 +32,19 @@ export const createRssiDevice = (serialPort: SerialPort) => {
     const writeConfig = async (options: {
         delay: number;
         phyEnabled: boolean[];
+        virtualFileSizeMb: number;
+        connectionIntervalUnits: number;
+        packetSizeBytes: number;
     }) => {
-        const { delay, phyEnabled } = options;
+        const {
+            delay,
+            phyEnabled,
+            virtualFileSizeMb,
+            connectionIntervalUnits,
+            packetSizeBytes,
+        } = options;
 
-        const clampedDelay = Math.max(0, Math.min(10, delay));
+        const clampedDelay = clamp(delay, 0, 10);
         const delayHex = clampedDelay.toString(16).padStart(2, '0');
 
         const physMask = phyEnabled.reduce(
@@ -41,7 +53,19 @@ export const createRssiDevice = (serialPort: SerialPort) => {
         );
         const physHex = physMask.toString(16).padStart(2, '0');
 
-        const cmd = `set config delay=0x${delayHex} phys=0x${physHex}\r`;
+        const fileSizeHex = clamp(virtualFileSizeMb, 1, 100)
+            .toString(16)
+            .padStart(4, '0');
+        const intervalHex = clamp(connectionIntervalUnits, 6, 400)
+            .toString(16)
+            .padStart(4, '0');
+        const packetSizeHex = clamp(packetSizeBytes, 23, 247)
+            .toString(16)
+            .padStart(4, '0');
+
+        const cmd =
+            `$$d${delayHex},p${physHex},f${fileSizeHex},` +
+            `i${intervalHex},m${packetSizeHex}\r`;
 
         await writeAndDrain(cmd);
     };

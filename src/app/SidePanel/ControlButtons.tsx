@@ -13,23 +13,50 @@ import {
     getIsConnected,
     getRssiDevice,
     getPhyEnabled,
+    getVirtualFileSizeMb,
+    getPendingVirtualFileSizeMb,
+    getConnectionIntervalUnits,
+    getPacketSizeBytes,
     loadDefaultConfig,
     applyCurrentPhyEnabled,
+    applyVirtualFileSizeMb,
+    applyEnableGraphOnSinglePhy,
 } from '../../features/throughputDevice/throughputDeviceSlice';
 
 export default () => {
     const isConnected = useSelector(getIsConnected);
     const delay = useSelector(getDelay);
     const phyEnabled = useSelector(getPhyEnabled);
+    const virtualFileSizeMb = useSelector(getVirtualFileSizeMb);
+    const pendingVirtualFileSizeMb = useSelector(getPendingVirtualFileSizeMb);
+    const connectionIntervalUnits = useSelector(getConnectionIntervalUnits);
+    const packetSizeBytes = useSelector(getPacketSizeBytes);
     const rssiDevice = useSelector(getRssiDevice);
     const dispatch = useDispatch();
 
     const writeConfig = useCallback(() => {
         if (!isConnected) return;
 
-        rssiDevice?.writeConfig({ delay, phyEnabled });
+        dispatch(applyVirtualFileSizeMb());
+        dispatch(applyEnableGraphOnSinglePhy());
+        rssiDevice?.writeConfig({
+            delay,
+            phyEnabled,
+            virtualFileSizeMb: pendingVirtualFileSizeMb,
+            connectionIntervalUnits,
+            packetSizeBytes,
+        });
         dispatch(applyCurrentPhyEnabled());
-    }, [delay, dispatch, isConnected, phyEnabled, rssiDevice]);
+    }, [
+        delay,
+        dispatch,
+        isConnected,
+        phyEnabled,
+        rssiDevice,
+        pendingVirtualFileSizeMb,
+        connectionIntervalUnits,
+        packetSizeBytes,
+    ]);
 
     const loadDefaults = useCallback(() => {
         dispatch(loadDefaultConfig());

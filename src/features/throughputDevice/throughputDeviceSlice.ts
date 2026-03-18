@@ -19,6 +19,12 @@ interface RssiState {
     data: readonly (readonly number[])[];
     dataMax: readonly number[];
     delay: number;
+    virtualFileSizeMb: number;
+    pendingVirtualFileSizeMb: number;
+    connectionIntervalUnits: number;
+    packetSizeBytes: number;
+    enableGraphOnSinglePhy: boolean;
+    pendingEnableGraphOnSinglePhy: boolean;
     noDataReceived: boolean;
     phyEnabled: boolean[];
     appliedPhyEnabled: boolean[];
@@ -26,6 +32,7 @@ interface RssiState {
     phyUpdatedAt: number[];
     phyMaxThroughput: number[];
     uartLog: { direction: 'tx' | 'rx'; text: string }[];
+    fileTransferResetTrigger: number;
     serialPort?: SerialPort<AutoDetectTypes>;
     rssiDevice?: RssiDevice;
 }
@@ -36,6 +43,12 @@ const initialState: RssiState = {
     data: initialData(),
     dataMax: [],
     delay: 5,
+    virtualFileSizeMb: 100,
+    pendingVirtualFileSizeMb: 100,
+    connectionIntervalUnits: 40,
+    packetSizeBytes: 247,
+    enableGraphOnSinglePhy: true,
+    pendingEnableGraphOnSinglePhy: true,
     noDataReceived: false,
     phyEnabled: [true, true, true, true, true],
     appliedPhyEnabled: [true, true, true, true, true],
@@ -43,6 +56,7 @@ const initialState: RssiState = {
     phyUpdatedAt: [0, 0, 0, 0, 0],
     phyMaxThroughput: [0, 0, 0, 0, 0],
     uartLog: [],
+    fileTransferResetTrigger: 0,
 };
 
 const rssiSlice = createSlice({
@@ -85,6 +99,12 @@ const rssiSlice = createSlice({
         loadDefaultConfig: state => {
             state.delay = initialState.delay;
             state.phyEnabled = [...initialState.phyEnabled];
+            state.virtualFileSizeMb = initialState.virtualFileSizeMb;
+            state.pendingVirtualFileSizeMb = initialState.pendingVirtualFileSizeMb;
+            state.connectionIntervalUnits = initialState.connectionIntervalUnits;
+            state.packetSizeBytes = initialState.packetSizeBytes;
+            state.enableGraphOnSinglePhy = initialState.enableGraphOnSinglePhy;
+            state.pendingEnableGraphOnSinglePhy = initialState.pendingEnableGraphOnSinglePhy;
         },
 
         applyCurrentPhyEnabled: state => {
@@ -93,6 +113,38 @@ const rssiSlice = createSlice({
 
         setDelay: (state, action: PayloadAction<number>) => {
             state.delay = action.payload;
+        },
+
+        setVirtualFileSizeMb: (state, action: PayloadAction<number>) => {
+            state.virtualFileSizeMb = action.payload;
+        },
+
+        setPendingVirtualFileSizeMb: (state, action: PayloadAction<number>) => {
+            state.pendingVirtualFileSizeMb = action.payload;
+        },
+
+        applyVirtualFileSizeMb: state => {
+            state.virtualFileSizeMb = state.pendingVirtualFileSizeMb;
+            state.fileTransferResetTrigger += 1;
+        },
+
+        setConnectionIntervalUnits: (state, action: PayloadAction<number>) => {
+            state.connectionIntervalUnits = action.payload;
+        },
+
+        setPacketSizeBytes: (state, action: PayloadAction<number>) => {
+            state.packetSizeBytes = action.payload;
+        },
+
+        setEnableGraphOnSinglePhy: (
+            state,
+            action: PayloadAction<boolean>,
+        ) => {
+            state.pendingEnableGraphOnSinglePhy = action.payload;
+        },
+
+        applyEnableGraphOnSinglePhy: state => {
+            state.enableGraphOnSinglePhy = state.pendingEnableGraphOnSinglePhy;
         },
 
         setPhyEnabled: (
@@ -173,6 +225,20 @@ export const getRssi = (state: RootState) =>
     state.app.rssi.data.map(scan => scan[0]);
 export const getRssiMax = (state: RootState) => state.app.rssi.dataMax;
 export const getDelay = (state: RootState) => state.app.rssi.delay;
+export const getVirtualFileSizeMb = (state: RootState) =>
+    state.app.rssi.virtualFileSizeMb;
+export const getPendingVirtualFileSizeMb = (state: RootState) =>
+    state.app.rssi.pendingVirtualFileSizeMb;
+export const getFileTransferResetTrigger = (state: RootState) =>
+    state.app.rssi.fileTransferResetTrigger;
+export const getConnectionIntervalUnits = (state: RootState) =>
+    state.app.rssi.connectionIntervalUnits;
+export const getPacketSizeBytes = (state: RootState) =>
+    state.app.rssi.packetSizeBytes;
+export const getEnableGraphOnSinglePhy = (state: RootState) =>
+    state.app.rssi.enableGraphOnSinglePhy;
+export const getPendingEnableGraphOnSinglePhy = (state: RootState) =>
+    state.app.rssi.pendingEnableGraphOnSinglePhy;
 
 export const getNoDataReceived = (state: RootState) =>
     state.app.rssi.noDataReceived;
@@ -196,6 +262,13 @@ export const {
     resetRssiStore,
     clearRssiData,
     setDelay,
+    setVirtualFileSizeMb,
+    setPendingVirtualFileSizeMb,
+    applyVirtualFileSizeMb,
+    setConnectionIntervalUnits,
+    setPacketSizeBytes,
+    setEnableGraphOnSinglePhy,
+    applyEnableGraphOnSinglePhy,
     setPhyEnabled,
     applyCurrentPhyEnabled,
     loadDefaultConfig,

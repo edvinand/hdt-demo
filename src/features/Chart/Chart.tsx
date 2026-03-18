@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: LicenseRef-Nordic-4-Clause
  */
 
-import React, { useEffect, useRef, useState } from 'react';
-import { Bar } from 'react-chartjs-2';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Bar, Line } from 'react-chartjs-2';
 import { useDispatch, useSelector } from 'react-redux';
 import {
     Alert,
@@ -13,7 +13,15 @@ import {
     Main,
     selectedDevice,
 } from '@nordicsemiconductor/pc-nrfconnect-shared';
-import { BarElement, CategoryScale, Chart, LinearScale } from 'chart.js';
+import {
+    BarElement,
+    CategoryScale,
+    Chart,
+    Filler,
+    LineElement,
+    LinearScale,
+    PointElement,
+} from 'chart.js';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
 
 import { recoverHex } from '../throughputDevice/throughputDeviceEffects';
@@ -23,6 +31,9 @@ import {
     getPhyThroughput,
     getPhyUpdatedAt,
     getPhyMaxThroughput,
+    getVirtualFileSizeMb,
+    getFileTransferResetTrigger,
+    getEnableGraphOnSinglePhy,
 } from '../throughputDevice/throughputDeviceSlice';
 import UartTerminal from '../throughputDevice/UartTerminal';
 import { PHY_LABELS } from '../throughputDevice/phyLabels';
@@ -60,6 +71,7 @@ const throughputLabelPlugin = {
         const fileTransferData: number[] =
             fileTransferDataset?.data ?? [];
         const elapsedData: number[] = fileTransferDataset?.elapsedMs ?? [];
+        const fileSizeMbData: number[] = fileTransferDataset?.fileSizeMb ?? [];
 
         const maxData: number[] =
             maxIndex >= 0 ? chart.data.datasets[maxIndex].data ?? [] : [];
@@ -73,6 +85,7 @@ const throughputLabelPlugin = {
         meta.data.forEach((bar: any, index: number) => {
             const percent = fileTransferData[index] ?? 0;
             const elapsedMs = elapsedData[index] ?? 0;
+            const fileSizeMb = fileSizeMbData[index] ?? 100;
 
             const halfHeight = (bar.height as number) / 2;
             const yBottom = (bar.y as number) + halfHeight;
@@ -123,7 +136,7 @@ const throughputLabelPlugin = {
                 ctx.fillText(
                     `${Math.round(
                         clampedPercent,
-                    )}% of 100MB (${timeLabel})`,
+                    )}% of ${fileSizeMb}MB (${timeLabel})`,
                     xLeft + 4,
                     trackY + trackHeight - 2,
                 );
@@ -286,17 +299,41 @@ Chart.register(
     ChartDataLabels,
     BarElement,
     CategoryScale,
+    Filler,
+    LineElement,
     LinearScale,
+    PointElement,
     throughputLabelPlugin,
 );
 
 const ANIMATION_DURATION_MS = 500;
+const MIN_GRAPH_MAX_KBPS = 100;
+const GRAPH_Y_HEADROOM = 1.1;
+const GRAPH_X_MAX_PERCENT = 100;
+
+type ThroughputSample = {
+    progressPercent: number;
+    throughputKbps: number;
+};
+
+const withOpacity = (hexColor: string, opacity: number) => {
+    if (!hexColor.startsWith('#')) return hexColor;
+
+    const alpha = Math.round(opacity * 255)
+        .toString(16)
+        .padStart(2, '0');
+
+    return `${hexColor}${alpha}`;
+};
 
 export default () => {
     const appliedPhyEnabled = useSelector(getAppliedPhyEnabled);
     const phyThroughput = useSelector(getPhyThroughput);
     const phyUpdatedAt = useSelector(getPhyUpdatedAt);
     const phyMaxThroughput = useSelector(getPhyMaxThroughput);
+    const virtualFileSizeMb = useSelector(getVirtualFileSizeMb);
+    const fileTransferResetTrigger = useSelector(getFileTransferResetTrigger);
+    const enableGraphOnSinglePhy = useSelector(getEnableGraphOnSinglePhy);
     const device = useSelector(selectedDevice);
     const readbackProtection = useSelector(getReadbackProtection);
     const noData = useSelector(getNoDataReceived);
@@ -313,6 +350,10 @@ export default () => {
     const visibleThroughput = enabledIndices.map(
         index => activeThroughput[index] ?? 0,
     );
+    const isSinglePhyActive = enabledIndices.length === 1;
+    const singleActivePhyIndex = isSinglePhyActive ? enabledIndices[0] : -1;
+    const shouldShowSinglePhyGraph =
+        enableGraphOnSinglePhy && isSinglePhyActive;
     const maxValue = Math.max(1, ...phyThroughput, ...phyMaxThroughput);
     const [now, setNow] = useState(() => Date.now());
     const [stickyMax, setStickyMax] = useState(maxValue);
@@ -326,7 +367,13 @@ export default () => {
     const [bestCompletedElapsedMs, setBestCompletedElapsedMs] = useState<
         number[]
     >(() => new Array(phyThroughput.length).fill(0));
+    const [singlePhyHistory, setSinglePhyHistory] = useState<
+        ThroughputSample[]
+    >([]);
+    const [singlePhyHistoryArmed, setSinglePhyHistoryArmed] =
+        useState(false);
     const lastTickRef = useRef(now);
+    const lastSampledUpdatedAtRef = useRef(0);
 
     useEffect(() => {
         // Find which PHY was most recently updated
@@ -357,22 +404,40 @@ export default () => {
         return () => clearInterval(id);
     }, []);
 
+    // Reset file transfer progress and elapsed time when fileTransferResetTrigger changes
+    useEffect(() => {
+        setFileTransferProgress(prevProgress => prevProgress.map(() => 0));
+        setFileTransferElapsedMs(prevElapsed => prevElapsed.map(() => 0));
+        setSinglePhyHistory([]);
+        lastSampledUpdatedAtRef.current = 0;
+        setSinglePhyHistoryArmed(shouldShowSinglePhyGraph);
+    }, [fileTransferResetTrigger]);
+
+    useEffect(() => {
+        if (shouldShowSinglePhyGraph) return;
+
+        setSinglePhyHistory([]);
+        lastSampledUpdatedAtRef.current = 0;
+        setSinglePhyHistoryArmed(false);
+    }, [shouldShowSinglePhyGraph]);
+
     useEffect(() => {
         const previous = lastTickRef.current;
         lastTickRef.current = now;
         const dtMs = now - previous;
         if (dtMs <= 0) return;
 
-        // Simulate file transfer progress for a 100 MB file per PHY.
+        const clampedFileSizeMb = Math.max(1, virtualFileSizeMb);
+        const fileSizeBits = clampedFileSizeMb * 1024 * 1024 * 8;
+
+        // Simulate file transfer progress for a virtual file size per PHY.
         // Interpret throughput as kbps and advance progress according to
-        // actual download time for a 100 MB file.
+        // actual download time for that file size.
         setFileTransferProgress(prevProgress =>
             prevProgress.map((value, index) => {
                 const throughputKbps = activeThroughput[index] ?? 0;
                 if (throughputKbps <= 0) return value;
 
-                // 100 MB in bits (100 * 1024 * 1024 bytes * 8 bits/byte)
-                const fileSizeBits = 100 * 1024 * 1024 * 8;
                 // throughputKbps is kilobits per second, dtMs is milliseconds
                 // Bits transferred in this interval: throughputKbps * dtMs
                 // (since kbps * 1000 * dtMs/1000 = kbps * dtMs)
@@ -394,7 +459,6 @@ export default () => {
                 const throughputKbps = activeThroughput[index] ?? 0;
                 if (throughputKbps <= 0) return elapsed;
 
-                const fileSizeBits = 100 * 1024 * 1024 * 8;
                 const delta =
                     (throughputKbps * dtMs * 100) / fileSizeBits;
                 const currentProgress = fileTransferProgress[index] ?? 0;
@@ -413,7 +477,6 @@ export default () => {
                 const throughputKbps = activeThroughput[index] ?? 0;
                 if (throughputKbps <= 0) return best;
 
-                const fileSizeBits = 100 * 1024 * 1024 * 8;
                 const delta =
                     (throughputKbps * dtMs * 100) / fileSizeBits;
                 const currentProgress = fileTransferProgress[index] ?? 0;
@@ -428,7 +491,193 @@ export default () => {
                 return best;
             }),
         );
-    }, [now, activeThroughput, fileTransferProgress, fileTransferElapsedMs, bestCompletedElapsedMs]);
+    }, [
+        now,
+        activeThroughput,
+        fileTransferProgress,
+        fileTransferElapsedMs,
+        bestCompletedElapsedMs,
+        virtualFileSizeMb,
+    ]);
+
+    useEffect(() => {
+        if (
+            !singlePhyHistoryArmed ||
+            !shouldShowSinglePhyGraph ||
+            singleActivePhyIndex < 0
+        ) {
+            return;
+        }
+
+        const updatedAt = phyUpdatedAt[singleActivePhyIndex] ?? 0;
+        if (!updatedAt || updatedAt === lastSampledUpdatedAtRef.current) {
+            return;
+        }
+
+        lastSampledUpdatedAtRef.current = updatedAt;
+
+        setSinglePhyHistory(previousHistory => {
+            const progressPercent =
+                fileTransferProgress[singleActivePhyIndex] ?? 0;
+            const throughputKbps = activeThroughput[singleActivePhyIndex] ?? 0;
+            const nextSample = { progressPercent, throughputKbps };
+            const lastSample = previousHistory[previousHistory.length - 1];
+
+            if (
+                lastSample &&
+                lastSample.progressPercent === nextSample.progressPercent &&
+                lastSample.throughputKbps === nextSample.throughputKbps
+            ) {
+                return previousHistory;
+            }
+
+            return [...previousHistory, nextSample];
+        });
+    }, [
+        activeThroughput,
+        fileTransferProgress,
+        fileTransferElapsedMs,
+        phyUpdatedAt,
+        shouldShowSinglePhyGraph,
+        singleActivePhyIndex,
+        singlePhyHistoryArmed,
+    ]);
+
+    const singlePhyGraphPoints = useMemo(
+        () =>
+            singlePhyHistory.map(sample => ({
+                x: sample.progressPercent,
+                y: sample.throughputKbps,
+            })),
+        [singlePhyHistory],
+    );
+
+    const currentSinglePhyThroughput =
+        singleActivePhyIndex >= 0 ? activeThroughput[singleActivePhyIndex] ?? 0 : 0;
+    const singlePhyGraphMax = Math.max(
+        MIN_GRAPH_MAX_KBPS,
+        Math.ceil(
+            (Math.max(
+                currentSinglePhyThroughput,
+                ...singlePhyHistory.map(sample => sample.throughputKbps),
+            ) * GRAPH_Y_HEADROOM) /
+                100,
+        ) * 100,
+    );
+
+    const throughputBar = (
+        <Bar
+            data={{
+                labels: visibleLabels,
+                datasets: [
+                    {
+                        label: 'Max throughput',
+                        backgroundColor: color.bar.background,
+                        borderWidth: 0,
+                        grouped: false,
+                        order: 1,
+                        barThickness: 50,
+                        datalabels: {
+                            display: false,
+                        },
+                        data: visibleMaxThroughput,
+                    },
+                    {
+                        label: 'filetransfer',
+                        backgroundColor: 'transparent',
+                        borderWidth: 0,
+                        grouped: false,
+                        order: 2,
+                        barThickness: 1,
+                        data: enabledIndices.map(
+                            index => fileTransferProgress[index] ?? 0,
+                        ),
+                        elapsedMs: enabledIndices.map(
+                            index => fileTransferElapsedMs[index] ?? 0,
+                        ),
+                        fileSizeMb: enabledIndices.map(() => virtualFileSizeMb),
+                        bestCompletedMs: enabledIndices.map(
+                            index => bestCompletedElapsedMs[index] ?? 0,
+                        ),
+                        datalabels: {
+                            display: false,
+                        },
+                    } as any,
+                    {
+                        label: 'Throughput',
+                        backgroundColor: enabledIndices.map(index => {
+                            if (index === lastUpdatedPhyIndex) {
+                                return color.bar.highlight;
+                            }
+                            return color.bar.normal;
+                        }),
+                        borderWidth: 0,
+                        grouped: false,
+                        order: 0,
+                        barThickness: 50,
+                        data: visibleThroughput,
+                        datalabels: {
+                            display: false,
+                        },
+                    },
+                ],
+            }}
+            options={{
+                responsive: true,
+                animation: { duration: ANIMATION_DURATION_MS },
+                maintainAspectRatio: false,
+                indexAxis: 'y',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: false },
+                },
+                scales: {
+                    x: {
+                        type: 'linear',
+                        position: 'bottom',
+                        title: {
+                            display: true,
+                            text: 'Throughput kbps',
+                            color: color.label,
+                            font: { size: 14 },
+                            padding: { top: 10 },
+                        },
+                        grid: {
+                            display: false,
+                        },
+                        border: {
+                            display: false,
+                        },
+                        ticks: {
+                            color: color.label,
+                            precision: 0,
+                        },
+                        min: 0,
+                        max: roundedStickyMax,
+                    },
+                    y: {
+                        type: 'category',
+                        offset: true,
+                        ticks: {
+                            color: color.label,
+                        },
+                        title: {
+                            display: false,
+                            text: 'PHY',
+                            color: color.label,
+                            font: { size: 14 },
+                        },
+                        grid: {
+                            display: false,
+                        },
+                        border: {
+                            display: false,
+                        },
+                    },
+                },
+            }}
+        />
+    );
 
     return (
         <div className="d-flex flex-column h-100">
@@ -451,125 +700,109 @@ export default () => {
                 )}
             <div className="position-relative flex-grow-1 overflow-hidden">
                 <Main>
-                    <Bar
-                        data={{
-                            labels: visibleLabels,
-                            datasets: [
-                                {
-                                    label: 'Max throughput',
-                                    // Light gray bars to indicate max throughput
-                                    backgroundColor: color.bar.background,
-                                    borderWidth: 0,
-                                    grouped: false,
-                                    order: 1,
-                                    barThickness: 50,
-                                    datalabels: {
-                                        display: false,
-                                    },
-                                    data: visibleMaxThroughput,
-                                },
-                                {
-                                    label: 'filetransfer',
-                                    backgroundColor: 'transparent',
-                                    borderWidth: 0,
-                                    grouped: false,
-                                    order: 2,
-                                    barThickness: 1,
-                                    data: enabledIndices.map(
-                                        index =>
-                                            fileTransferProgress[index] ?? 0,
-                                    ),
-                                    // Custom field consumed by throughputLabelPlugin
-                                    elapsedMs: enabledIndices.map(
-                                        index =>
-                                            fileTransferElapsedMs[index] ?? 0,
-                                    ),
-                                    bestCompletedMs: enabledIndices.map(
-                                        index =>
-                                            bestCompletedElapsedMs[index] ?? 0,
-                                    ),
-                                    datalabels: {
-                                        display: false,
-                                    },
-                                } as any,
-                                {
-                                    label: 'Throughput',
-                                    backgroundColor: enabledIndices.map(
-                                        (index) => {
-                                            if (index === lastUpdatedPhyIndex) {
-                                                return color.bar.highlight;
-                                            }
-                                            return color.bar.normal;
+                    {shouldShowSinglePhyGraph ? (
+                        <div className="d-flex flex-column h-100" style={{ gap: 16 }}>
+                            <div style={{ flex: '0 0 38%', minHeight: 0 }}>
+                                <Line
+                                    data={{
+                                        datasets: [
+                                            {
+                                                label: 'Transfer history',
+                                                data: singlePhyGraphPoints,
+                                                parsing: false,
+                                                fill: true,
+                                                borderColor: color.bar.highlight,
+                                                backgroundColor: withOpacity(
+                                                    color.bar.normal,
+                                                    0.28,
+                                                ),
+                                                pointRadius: 0,
+                                                pointHitRadius: 8,
+                                                pointHoverRadius: 0,
+                                                tension: 0.25,
+                                                borderWidth: 2,
+                                            },
+                                        ],
+                                    }}
+                                    options={{
+                                        responsive: true,
+                                        animation: false,
+                                        maintainAspectRatio: false,
+                                        plugins: {
+                                            legend: { display: false },
+                                            tooltip: { enabled: false },
+                                            datalabels: { display: false },
+                                            title: {
+                                                display: true,
+                                                text: `${PHY_LABELS[singleActivePhyIndex]} transfer history`,
+                                                align: 'start',
+                                                color: color.label,
+                                                font: { size: 14 },
+                                                padding: { bottom: 12 },
+                                            },
                                         },
-                                    ),
-                                    borderWidth: 0,
-                                    grouped: false,
-                                    order: 0,
-                                    barThickness: 50,
-                                    data: visibleThroughput,
-                                    datalabels: {
-                                        display: false,
-                                    },
-                                },
-                            ],
-                        }}
-                        options={{
-                            responsive: true,
-                            animation: { duration: ANIMATION_DURATION_MS },
-                            maintainAspectRatio: false,
-                            indexAxis: 'y',
-                            plugins: {
-                                legend: { display: false },
-                                tooltip: { enabled: false },
-                            },
-                            scales: {
-                                x: {
-                                    type: 'linear',
-                                    position: 'bottom',
-                                    title: {
-                                        display: true,
-                                        text: 'Throughput kbps',
-                                        color: color.label,
-                                        font: { size: 14 },
-                                        padding: { top: 10 },
-                                    },
-                                    grid: {
-                                        display: false,
-                                    },
-                                    border: {
-                                        display: false,
-                                    },
-                                    ticks: {
-                                        color: color.label,
-                                        precision: 0,
-                                    },
-                                    min: 0,
-                                    max: roundedStickyMax,
-                                },
-                                y: {
-                                    type: 'category',
-                                    offset: true,
-                                    ticks: {
-                                        // Use the labels array (visibleLabels) directly
-                                        // so disabled PHYs keep their original numbering.
-                                        color: color.label,
-                                    },
-                                    title: {
-                                        display: false,
-                                        text: 'PHY',
-                                        color: color.label,
-                                        font: { size: 14 },
-                                    },
-                                    grid: {
-                                        display: false,
-                                    },
-                                    border: {
-                                        display: false,
-                                    },
-                                },
-                            },
-                        }}
-                    />
+                                        scales: {
+                                            x: {
+                                                type: 'linear',
+                                                min: 0,
+                                                max: GRAPH_X_MAX_PERCENT,
+                                                grid: {
+                                                    color: withOpacity(
+                                                        color.bar.highlight,
+                                                        0.08,
+                                                    ),
+                                                },
+                                                border: {
+                                                    display: false,
+                                                },
+                                                ticks: {
+                                                    color: color.label,
+                                                    maxTicksLimit: 6,
+                                                    callback: (
+                                                        value: string | number,
+                                                    ) => `${value}%`,
+                                                },
+                                            },
+                                            y: {
+                                                min: 0,
+                                                max: singlePhyGraphMax,
+                                                grid: {
+                                                    color: withOpacity(
+                                                        color.bar.highlight,
+                                                        0.08,
+                                                    ),
+                                                },
+                                                border: {
+                                                    display: false,
+                                                },
+                                                ticks: {
+                                                    color: color.label,
+                                                    precision: 0,
+                                                    maxTicksLimit: 4,
+                                                },
+                                                title: {
+                                                    display: true,
+                                                    text: 'kbps',
+                                                    color: color.label,
+                                                    font: { size: 12 },
+                                                },
+                                            },
+                                        },
+                                        elements: {
+                                            line: {
+                                                capBezierPoints: true,
+                                            },
+                                        },
+                                    } as any}
+                                />
+                            </div>
+                            <div style={{ flex: '1 1 auto', minHeight: 0 }}>
+                                {throughputBar}
+                            </div>
+                        </div>
+                    ) : (
+                        throughputBar
+                    )}
                 </Main>
                 <UartTerminal />
             </div>

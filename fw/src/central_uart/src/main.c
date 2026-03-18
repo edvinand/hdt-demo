@@ -66,6 +66,10 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #define SECURITY_REQ_DELAY K_MSEC(200)	// not used?
 #define REPORT_RATE 4 // reports per second
 #define MAX_MTU_SIZE 247
+#define MIN_PACKET_SIZE 23
+#define DEFAULT_CONN_INTERVAL_UNITS 40
+#define MIN_CONN_INTERVAL_UNITS 6
+#define MAX_CONN_INTERVAL_UNITS 400
 
 static K_SEM_DEFINE(ble_init_ok, 0, 1);
 
@@ -96,6 +100,12 @@ volatile bool central_mode = true;
 volatile int current_mtu = 20;
 volatile bool skip_measurement = false;
 volatile enum phy_type actual_phy = PHY_1M;
+volatile uint16_t requested_packet_size = MAX_MTU_SIZE;
+
+static uint16_t current_conn_interval_units = DEFAULT_CONN_INTERVAL_UNITS;
+static uint16_t current_conn_latency = 0;
+static uint16_t current_conn_timeout = 400;
+static bool has_known_conn_interval = false;
 
 uint8_t push_data[MAX_MTU_SIZE] = {0};
 
@@ -614,6 +624,10 @@ static void on_connected(struct bt_conn *conn, uint8_t conn_err)
 	//k_timer_start(&push_data_timer, K_MSEC(4000), K_NO_WAIT);
 
 	mtu_exchange_started = false;
+	has_known_conn_interval = false;
+	current_conn_interval_units = DEFAULT_CONN_INTERVAL_UNITS;
+	current_conn_latency = 0;
+	current_conn_timeout = 400;
 	k_work_reschedule(&security_work, SECURITY_REQ_DELAY);
 
 	err = bt_scan_stop();
@@ -637,6 +651,10 @@ static void on_disconnected(struct bt_conn *conn, uint8_t reason)
 
 	(void)k_work_cancel_delayable(&security_work);
 	mtu_exchange_started = false;
+	has_known_conn_interval = false;
+	current_conn_interval_units = DEFAULT_CONN_INTERVAL_UNITS;
+	current_conn_latency = 0;
+	current_conn_timeout = 400;
 
 	bt_conn_unref(default_conn);
 	default_conn = NULL;
@@ -677,9 +695,12 @@ static void on_security_changed(struct bt_conn *conn, bt_security_t level,
 
 void on_le_param_updated(struct bt_conn *conn, uint16_t interval, uint16_t latency, uint16_t timeout)
 {
-	// char addr[BT_ADDR_LE_STR_LEN];
+	ARG_UNUSED(conn);
 
-	// bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+	current_conn_interval_units = interval;
+	current_conn_latency = latency;
+	current_conn_timeout = timeout;
+	has_known_conn_interval = true;
 
 	LOG_INF("connection parameters updated: int 0x%04x lat 0x%04x timeout 0x%04x",
 		interval, latency, timeout);
@@ -718,11 +739,36 @@ void on_le_data_len_updated(struct bt_conn *conn, struct bt_conn_le_data_len_inf
     LOG_INF("Data length updated. Length %d/%d bytes, time %d/%d us", tx_len, rx_len, tx_time, rx_time);
 }
 
+bool on_le_param_req(struct bt_conn *conn, struct bt_le_conn_param *param)
+{
+	LOG_INF("Connection parameter update request: int 0x%04x lat 0x%04x timeout 0x%04x",
+		param->interval_min, param->latency, param->timeout);
+
+	if (param->interval_min < MIN_CONN_INTERVAL_UNITS ||
+	    param->interval_max > MAX_CONN_INTERVAL_UNITS) {
+		LOG_WRN("Connection interval out of range");
+		return false;
+	}
+
+	if (param->latency > 0) {
+		LOG_WRN("Connection latency not supported");
+		return false;
+	}
+
+	if (param->timeout < 10 || param->timeout > 3200) {
+		LOG_WRN("Supervision timeout out of range");
+		return false;
+	}
+
+	return true;
+}
+
 BT_CONN_CB_DEFINE(conn_callbacks) = {
 	.connected = on_connected,
 	.disconnected = on_disconnected,
 	.security_changed = on_security_changed,
 	.le_param_updated = on_le_param_updated,
+	.le_param_req = on_le_param_req,
 	.le_phy_updated = on_le_phy_updated,
 	.le_data_len_updated = on_le_data_len_updated,
 };
@@ -1059,7 +1105,94 @@ int main(void)
 	}
 }
 
+static char *skip_spaces(char *value)
+{
+	while (*value == ' ' || *value == '\t') {
+		value++;
+	}
 
+	return value;
+}
+
+static uint16_t clamp_u16(uint16_t value, uint16_t min, uint16_t max)
+{
+	if (value < min) {
+		return min;
+	}
+
+	if (value > max) {
+		return max;
+	}
+
+	return value;
+}
+
+static bool parse_config_command(char *cmd, int *delay, int *phys,
+				 uint16_t *file_size_mb,
+				 uint16_t *conn_interval_units,
+				 uint16_t *packet_size)
+{
+	if (strncmp(cmd, "$$", 2) != 0) {
+		return false;
+	}
+
+	bool has_delay = false;
+	bool has_phys = false;
+	bool has_file = false;
+	bool has_interval = false;
+	bool has_packet = false;
+
+	char *saveptr;
+	char *token = strtok_r(cmd + 2, ",", &saveptr);
+
+	while (token != NULL) {
+		char *trimmed = skip_spaces(token);
+		if (*trimmed == '\0') {
+			return false;
+		}
+
+		char tag = *trimmed;
+		char *value_str = trimmed + 1;
+		if (*value_str == '\0') {
+			return false;
+		}
+
+		char *endptr;
+		unsigned long value = strtoul(value_str, &endptr, 16);
+		if (endptr == value_str) {
+			return false;
+		}
+
+		switch (tag) {
+		case 'd':
+			*delay = (int)value;
+			has_delay = true;
+			break;
+		case 'p':
+			*phys = (int)value;
+			has_phys = true;
+			break;
+		case 'f':
+			*file_size_mb = (uint16_t)value;
+			has_file = true;
+			break;
+		case 'i':
+			*conn_interval_units = (uint16_t)value;
+			has_interval = true;
+			break;
+		case 'm':
+			*packet_size = (uint16_t)value;
+			has_packet = true;
+			break;
+		default:
+			return false;
+		}
+
+		token = strtok_r(NULL, ",", &saveptr);
+	}
+
+	return has_delay && has_phys && has_file && has_interval && has_packet;
+}
 
 void handle_uart_command(struct uart_data_t nus_data)
 {
@@ -1076,20 +1209,78 @@ void handle_uart_command(struct uart_data_t nus_data)
 	if (strncmp(nus_data.data, "led", 3) == 0) {
 		dk_set_led(TEST_LED, led_state);
 		led_state = !led_state;
-	}
-	else if (strncmp(nus_data.data, "set config delay=0x", 19) == 0) {
-		LOG_INF("delay: %s", &nus_data.data[19]);
-		int delay = strtol(&nus_data.data[19], NULL, 16);
-		LOG_INF("delay: %d", delay);
-		current_delay = delay;
-		k_timer_start(&throughput_timer, K_MSEC(1000/REPORT_RATE), K_MSEC(1000/REPORT_RATE));
+	} else {
+		int delay = 0;
+		int phys = 0;
+		uint16_t file_size_mb = 0;
+		uint16_t conn_interval_units = 0;
+		uint16_t packet_size = 0;
+		bool parsed = parse_config_command((char *)nus_data.data, &delay, &phys,
+							  &file_size_mb,
+							  &conn_interval_units,
+							  &packet_size);
 
-		int phys = strtol(&nus_data.data[29], NULL, 16);
-		LOG_INF("phys: %d", phys);
+		if (!parsed) {
+			LOG_WRN("Unknown UART command");
+			return;
+		}
+
+		delay = (int)clamp_u16((uint16_t)delay, 0, 10);
+		conn_interval_units = clamp_u16(conn_interval_units,
+					       MIN_CONN_INTERVAL_UNITS,
+					       MAX_CONN_INTERVAL_UNITS);
+		packet_size = clamp_u16(packet_size, MIN_PACKET_SIZE, MAX_MTU_SIZE);
+		if (file_size_mb < 1) {
+			file_size_mb = 1;
+		}
+
+		current_delay = delay;
+		k_timer_start(&throughput_timer, K_MSEC(1000/REPORT_RATE),
+			      K_MSEC(1000/REPORT_RATE));
+
 		for (int i = 0; i < NUM_PHYS; i++) {
 			active_phys[i] = (phys & (1 << i)) != 0;
 		}
 		skip_measurement = true;
+		requested_packet_size = packet_size;
+
+		LOG_INF("cfg delay=%d phys=0x%02x file=%uMB i=0x%04x m=%u",
+			delay, phys, file_size_mb, conn_interval_units, packet_size);
+
+		if (!default_conn) {
+			LOG_WRN("Skip conn interval update: no active connection");
+			return;
+		}
+
+		if (!has_known_conn_interval &&
+		    conn_interval_units == DEFAULT_CONN_INTERVAL_UNITS) {
+			LOG_INF("Skip conn interval update: waiting for first interval callback");
+			return;
+		}
+
+		if (has_known_conn_interval &&
+		    conn_interval_units == current_conn_interval_units) {
+			LOG_INF("Skip conn interval update: unchanged (0x%04x)",
+				conn_interval_units);
+			return;
+		}
+
+		/* Convert timeout: conn_interval is in 1.25ms units, timeout is in 10ms units
+		   desired timeout = 3 * conn_interval_ms = 3 * conn_interval_units * 1.25ms
+		   timeout_units = (3 * conn_interval_units * 1.25) / 10 = (conn_interval_units * 375) / 1000 */
+		uint16_t adjusted_timeout = (conn_interval_units * 375) / 1000;
+		struct bt_le_conn_param conn_param = {
+			.interval_min = conn_interval_units,
+			.interval_max = conn_interval_units,
+			.latency = current_conn_latency,
+			.timeout = adjusted_timeout,
+		};
+		int update_err = bt_conn_le_param_update(default_conn, &conn_param);
+		if (update_err) {
+			LOG_WRN("bt_conn_le_param_update failed (err %d)", update_err);
+		} else {
+			LOG_INF("Requested conn interval update to 0x%04x", conn_interval_units);
+		}
 	}
 }
 
@@ -1247,14 +1438,20 @@ void my_push_thread(void)
 	k_sem_take(&nus_transmit_sem, K_FOREVER);
 
 	int err;
-	int my_mtu = current_mtu - 3; // Subtract 3 bytes for ATT header
+	int payload_len = current_mtu - 3; // Subtract 3 bytes for ATT header
 	int counter = 0;
 	LOG_INF("sending data over BLE connection");
 	while (true)
 	{
-		my_mtu = current_mtu - 3; // Update MTU in case it has changed
-		//err = bt_nus_client_send(&nus_client, push_data, my_mtu);
-		err = bt_gatt_write_without_response(default_conn, nus_client.handles.rx, push_data, my_mtu, false);
+		payload_len = current_mtu - 3; // Update MTU in case it has changed
+		if (payload_len < 1) {
+			payload_len = 1;
+		}
+		if ((uint16_t)payload_len > requested_packet_size) {
+			payload_len = requested_packet_size;
+		}
+		//err = bt_nus_client_send(&nus_client, push_data, payload_len);
+		err = bt_gatt_write_without_response(default_conn, nus_client.handles.rx, push_data, payload_len, false);
 		if (err) {
 			LOG_WRN("Sent %d packets"
 				"(err %d)", counter, err);

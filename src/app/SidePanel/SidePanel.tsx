@@ -12,6 +12,7 @@ import ControlButtons from './ControlButtons';
 import Delay from './Delay';
 import ToggleLed from './ToggleLed';
 import ConfigPhySelector from './ConfigPhySelector';
+import Advanced from './Advanced';
 
 export default () => {
     useThroughputDevice();
@@ -29,6 +30,10 @@ export default () => {
 
             <Group heading="Device">
                 <ToggleLed />
+            </Group>
+
+            <Group heading="Advanced" collapsible defaultCollapsed>
+                <Advanced />
             </Group>
         </SidePanel>
     );
