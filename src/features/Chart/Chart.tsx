@@ -34,6 +34,7 @@ import {
     getVirtualFileSizeMb,
     getFileTransferResetTrigger,
     getEnableGraphOnSinglePhy,
+    getEnableUartTerminal,
 } from '../throughputDevice/throughputDeviceSlice';
 import UartTerminal from '../throughputDevice/UartTerminal';
 import { PHY_LABELS } from '../throughputDevice/phyLabels';
@@ -326,6 +327,25 @@ const withOpacity = (hexColor: string, opacity: number) => {
     return `${hexColor}${alpha}`;
 };
 
+const createTransferHistoryGradient = (chart: any) => {
+    const { ctx, chartArea } = chart;
+
+    if (!chartArea) {
+        return withOpacity(color.bar.normal, 0.28);
+    }
+
+    const gradient = ctx.createLinearGradient(
+        0,
+        chartArea.top,
+        0,
+        chartArea.bottom,
+    );
+    gradient.addColorStop(0, withOpacity(color.bar.highlight, 0.45));
+    gradient.addColorStop(1, withOpacity(color.bar.normal, 0.08));
+
+    return gradient;
+};
+
 export default () => {
     const appliedPhyEnabled = useSelector(getAppliedPhyEnabled);
     const phyThroughput = useSelector(getPhyThroughput);
@@ -334,6 +354,7 @@ export default () => {
     const virtualFileSizeMb = useSelector(getVirtualFileSizeMb);
     const fileTransferResetTrigger = useSelector(getFileTransferResetTrigger);
     const enableGraphOnSinglePhy = useSelector(getEnableGraphOnSinglePhy);
+    const enableUartTerminal = useSelector(getEnableUartTerminal);
     const device = useSelector(selectedDevice);
     const readbackProtection = useSelector(getReadbackProtection);
     const noData = useSelector(getNoDataReceived);
@@ -374,6 +395,7 @@ export default () => {
         useState(false);
     const lastTickRef = useRef(now);
     const lastSampledUpdatedAtRef = useRef(0);
+    const lastSinglePhyProgressRef = useRef<number | null>(null);
 
     useEffect(() => {
         // Find which PHY was most recently updated
@@ -418,8 +440,34 @@ export default () => {
 
         setSinglePhyHistory([]);
         lastSampledUpdatedAtRef.current = 0;
+        lastSinglePhyProgressRef.current = null;
         setSinglePhyHistoryArmed(false);
     }, [shouldShowSinglePhyGraph]);
+
+    useEffect(() => {
+        if (!shouldShowSinglePhyGraph || singleActivePhyIndex < 0) {
+            lastSinglePhyProgressRef.current = null;
+            return;
+        }
+
+        const currentProgress = fileTransferProgress[singleActivePhyIndex] ?? 0;
+        const previousProgress = lastSinglePhyProgressRef.current;
+
+        if (
+            previousProgress !== null &&
+            currentProgress < previousProgress
+        ) {
+            setSinglePhyHistory([]);
+            lastSampledUpdatedAtRef.current = 0;
+            setSinglePhyHistoryArmed(true);
+        }
+
+        lastSinglePhyProgressRef.current = currentProgress;
+    }, [
+        fileTransferProgress,
+        shouldShowSinglePhyGraph,
+        singleActivePhyIndex,
+    ]);
 
     useEffect(() => {
         const previous = lastTickRef.current;
@@ -712,10 +760,10 @@ export default () => {
                                                 parsing: false,
                                                 fill: true,
                                                 borderColor: color.bar.highlight,
-                                                backgroundColor: withOpacity(
-                                                    color.bar.normal,
-                                                    0.28,
-                                                ),
+                                                backgroundColor: (context: any) =>
+                                                    createTransferHistoryGradient(
+                                                        context.chart,
+                                                    ),
                                                 pointRadius: 0,
                                                 pointHitRadius: 8,
                                                 pointHoverRadius: 0,
@@ -804,7 +852,7 @@ export default () => {
                         throughputBar
                     )}
                 </Main>
-                <UartTerminal />
+                {enableUartTerminal && <UartTerminal />}
             </div>
         </div>
     );

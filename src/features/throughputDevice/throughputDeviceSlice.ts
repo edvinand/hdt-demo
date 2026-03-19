@@ -25,6 +25,8 @@ interface RssiState {
     packetSizeBytes: number;
     enableGraphOnSinglePhy: boolean;
     pendingEnableGraphOnSinglePhy: boolean;
+    enableUartTerminal: boolean;
+    pendingEnableUartTerminal: boolean;
     noDataReceived: boolean;
     phyEnabled: boolean[];
     appliedPhyEnabled: boolean[];
@@ -49,6 +51,8 @@ const initialState: RssiState = {
     packetSizeBytes: 247,
     enableGraphOnSinglePhy: true,
     pendingEnableGraphOnSinglePhy: true,
+    enableUartTerminal: false,
+    pendingEnableUartTerminal: false,
     noDataReceived: false,
     phyEnabled: [true, true, true, true, true],
     appliedPhyEnabled: [true, true, true, true, true],
@@ -105,6 +109,8 @@ const rssiSlice = createSlice({
             state.packetSizeBytes = initialState.packetSizeBytes;
             state.enableGraphOnSinglePhy = initialState.enableGraphOnSinglePhy;
             state.pendingEnableGraphOnSinglePhy = initialState.pendingEnableGraphOnSinglePhy;
+            state.enableUartTerminal = initialState.enableUartTerminal;
+            state.pendingEnableUartTerminal = initialState.pendingEnableUartTerminal;
         },
 
         applyCurrentPhyEnabled: state => {
@@ -145,6 +151,14 @@ const rssiSlice = createSlice({
 
         applyEnableGraphOnSinglePhy: state => {
             state.enableGraphOnSinglePhy = state.pendingEnableGraphOnSinglePhy;
+        },
+
+        setEnableUartTerminal: (state, action: PayloadAction<boolean>) => {
+            state.pendingEnableUartTerminal = action.payload;
+        },
+
+        applyEnableUartTerminal: state => {
+            state.enableUartTerminal = state.pendingEnableUartTerminal;
         },
 
         setPhyEnabled: (
@@ -239,6 +253,10 @@ export const getEnableGraphOnSinglePhy = (state: RootState) =>
     state.app.rssi.enableGraphOnSinglePhy;
 export const getPendingEnableGraphOnSinglePhy = (state: RootState) =>
     state.app.rssi.pendingEnableGraphOnSinglePhy;
+export const getEnableUartTerminal = (state: RootState) =>
+    state.app.rssi.enableUartTerminal;
+export const getPendingEnableUartTerminal = (state: RootState) =>
+    state.app.rssi.pendingEnableUartTerminal;
 
 export const getNoDataReceived = (state: RootState) =>
     state.app.rssi.noDataReceived;
@@ -269,6 +287,8 @@ export const {
     setPacketSizeBytes,
     setEnableGraphOnSinglePhy,
     applyEnableGraphOnSinglePhy,
+    setEnableUartTerminal,
+    applyEnableUartTerminal,
     setPhyEnabled,
     applyCurrentPhyEnabled,
     loadDefaultConfig,

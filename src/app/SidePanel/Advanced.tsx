@@ -13,12 +13,13 @@ import {
 
 import {
     getConnectionIntervalUnits,
-    getEnableGraphOnSinglePhy,
     getPendingEnableGraphOnSinglePhy,
+    getPendingEnableUartTerminal,
     getPacketSizeBytes,
     getPendingVirtualFileSizeMb,
     setConnectionIntervalUnits,
     setEnableGraphOnSinglePhy,
+    setEnableUartTerminal,
     setPacketSizeBytes,
     setPendingVirtualFileSizeMb,
 } from '../../features/throughputDevice/throughputDeviceSlice';
@@ -35,6 +36,7 @@ export default () => {
     const connectionIntervalUnits = useSelector(getConnectionIntervalUnits);
     const packetSizeBytes = useSelector(getPacketSizeBytes);
     const enableGraphOnSinglePhy = useSelector(getPendingEnableGraphOnSinglePhy);
+    const enableUartTerminal = useSelector(getPendingEnableUartTerminal);
 
     const setFileSize = useCallback(
         (value: number) => {
@@ -61,6 +63,13 @@ export default () => {
     const setEnableGraph = useCallback(
         (enabled: boolean) => {
             dispatch(setEnableGraphOnSinglePhy(enabled));
+        },
+        [dispatch],
+    );
+
+    const setEnableTerminal = useCallback(
+        (enabled: boolean) => {
+            dispatch(setEnableUartTerminal(enabled));
         },
         [dispatch],
     );
@@ -100,6 +109,14 @@ export default () => {
                     onToggle={setEnableGraph}
                 >
                     Enable graph on single PHY
+                </Toggle>
+            </div>
+            <div className="tw-mt-2">
+                <Toggle
+                    isToggled={enableUartTerminal}
+                    onToggle={setEnableTerminal}
+                >
+                    Enable UART terminal
                 </Toggle>
             </div>
         </>

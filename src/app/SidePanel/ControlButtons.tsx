@@ -21,6 +21,7 @@ import {
     applyCurrentPhyEnabled,
     applyVirtualFileSizeMb,
     applyEnableGraphOnSinglePhy,
+    applyEnableUartTerminal,
 } from '../../features/throughputDevice/throughputDeviceSlice';
 
 export default () => {
@@ -39,6 +40,7 @@ export default () => {
 
         dispatch(applyVirtualFileSizeMb());
         dispatch(applyEnableGraphOnSinglePhy());
+        dispatch(applyEnableUartTerminal());
         rssiDevice?.writeConfig({
             delay,
             phyEnabled,
