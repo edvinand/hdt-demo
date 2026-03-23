@@ -25,6 +25,7 @@ import {
     applyCurrentPhyEnabled,
     applyVirtualFileSizeMb,
     applyEnableGraphOnSinglePhy,
+    applyEnableProgressBars,
     applyEnableUartTerminal,
 } from '../../features/throughputDevice/throughputDeviceSlice';
 
@@ -53,6 +54,7 @@ export default () => {
 
         dispatch(applyVirtualFileSizeMb());
         dispatch(applyEnableGraphOnSinglePhy());
+        dispatch(applyEnableProgressBars());
         dispatch(applyEnableUartTerminal());
         rssiDevice?.writeConfig({
             delay,

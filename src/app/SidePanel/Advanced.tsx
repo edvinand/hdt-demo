@@ -17,12 +17,14 @@ import {
     getIsConnected,
     getIsPhyFrozen,
     getPendingEnableGraphOnSinglePhy,
+    getPendingEnableProgressBars,
     getPendingEnableUartTerminal,
     getPacketSizeBytes,
     getPendingVirtualFileSizeMb,
     getRssiDevice,
     setConnectionIntervalUnits,
     setEnableGraphOnSinglePhy,
+    setEnableProgressBars,
     setEnableUartTerminal,
     setIsPhyFrozen,
     setPacketSizeBytes,
@@ -44,6 +46,7 @@ export default () => {
     const isPhyFrozen = useSelector(getIsPhyFrozen);
     const rssiDevice = useSelector(getRssiDevice);
     const enableGraphOnSinglePhy = useSelector(getPendingEnableGraphOnSinglePhy);
+    const enableProgressBars = useSelector(getPendingEnableProgressBars);
     const enableUartTerminal = useSelector(getPendingEnableUartTerminal);
     const [isFreezeCommandInFlight, setIsFreezeCommandInFlight] = useState(false);
 
@@ -79,6 +82,13 @@ export default () => {
     const setEnableTerminal = useCallback(
         (enabled: boolean) => {
             dispatch(setEnableUartTerminal(enabled));
+        },
+        [dispatch],
+    );
+
+    const setEnableProgress = useCallback(
+        (enabled: boolean) => {
+            dispatch(setEnableProgressBars(enabled));
         },
         [dispatch],
     );
@@ -143,6 +153,14 @@ export default () => {
                     onToggle={setEnableTerminal}
                 >
                     Enable UART terminal
+                </Toggle>
+            </div>
+            <div className="tw-mt-2">
+                <Toggle
+                    isToggled={enableProgressBars}
+                    onToggle={setEnableProgress}
+                >
+                    Enable progress bars
                 </Toggle>
             </div>
             <div className="tw-mt-2">

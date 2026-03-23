@@ -34,6 +34,7 @@ import {
     getVirtualFileSizeMb,
     getFileTransferResetTrigger,
     getEnableGraphOnSinglePhy,
+    getEnableProgressBars,
     getEnableUartTerminal,
 } from '../throughputDevice/throughputDeviceSlice';
 import UartTerminal from '../throughputDevice/UartTerminal';
@@ -69,6 +70,7 @@ const throughputLabelPlugin = {
             fileTransferIndex >= 0
                 ? chart.data.datasets[fileTransferIndex]
                 : undefined;
+        const showProgressBars = fileTransferDataset?.showProgressBars !== false;
         const fileTransferData: number[] =
             fileTransferDataset?.data ?? [];
         const elapsedData: number[] = fileTransferDataset?.elapsedMs ?? [];
@@ -109,7 +111,11 @@ const throughputLabelPlugin = {
             const maxTrackTop = chartArea.bottom - (trackHeight + 20);
             if (trackY > maxTrackTop) trackY = maxTrackTop;
 
-            if (trackY + trackHeight >= chartArea.top && trackWidth > 0) {
+            if (
+                showProgressBars &&
+                trackY + trackHeight >= chartArea.top &&
+                trackWidth > 0
+            ) {
                 ctx.save();
                 // Grey track and blue fill for file-transfer progress
                 ctx.fillStyle = color.bar.background; // grey track
@@ -367,6 +373,7 @@ export default () => {
     const virtualFileSizeMb = useSelector(getVirtualFileSizeMb);
     const fileTransferResetTrigger = useSelector(getFileTransferResetTrigger);
     const enableGraphOnSinglePhy = useSelector(getEnableGraphOnSinglePhy);
+    const enableProgressBars = useSelector(getEnableProgressBars);
     const enableUartTerminal = useSelector(getEnableUartTerminal);
     const device = useSelector(selectedDevice);
     const readbackProtection = useSelector(getReadbackProtection);
@@ -660,6 +667,7 @@ export default () => {
                         bestCompletedMs: enabledIndices.map(
                             index => bestCompletedElapsedMs[index] ?? 0,
                         ),
+                        showProgressBars: enableProgressBars,
                         datalabels: {
                             display: false,
                         },

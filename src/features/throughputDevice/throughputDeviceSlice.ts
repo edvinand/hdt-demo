@@ -27,6 +27,8 @@ interface RssiState {
     pendingEnableGraphOnSinglePhy: boolean;
     enableUartTerminal: boolean;
     pendingEnableUartTerminal: boolean;
+    enableProgressBars: boolean;
+    pendingEnableProgressBars: boolean;
     isPhyFrozen: boolean;
     noDataReceived: boolean;
     phyEnabled: boolean[];
@@ -54,6 +56,8 @@ const initialState: RssiState = {
     pendingEnableGraphOnSinglePhy: true,
     enableUartTerminal: false,
     pendingEnableUartTerminal: false,
+    enableProgressBars: true,
+    pendingEnableProgressBars: true,
     isPhyFrozen: false,
     noDataReceived: false,
     phyEnabled: [true, true, true, true, true, true, true],
@@ -114,6 +118,8 @@ const rssiSlice = createSlice({
             state.pendingEnableGraphOnSinglePhy = initialState.pendingEnableGraphOnSinglePhy;
             state.enableUartTerminal = initialState.enableUartTerminal;
             state.pendingEnableUartTerminal = initialState.pendingEnableUartTerminal;
+            state.enableProgressBars = initialState.enableProgressBars;
+            state.pendingEnableProgressBars = initialState.pendingEnableProgressBars;
         },
 
         applyCurrentPhyEnabled: state => {
@@ -162,6 +168,14 @@ const rssiSlice = createSlice({
 
         applyEnableUartTerminal: state => {
             state.enableUartTerminal = state.pendingEnableUartTerminal;
+        },
+
+        setEnableProgressBars: (state, action: PayloadAction<boolean>) => {
+            state.pendingEnableProgressBars = action.payload;
+        },
+
+        applyEnableProgressBars: state => {
+            state.enableProgressBars = state.pendingEnableProgressBars;
         },
 
         setIsPhyFrozen: (state, action: PayloadAction<boolean>) => {
@@ -268,6 +282,10 @@ export const getEnableUartTerminal = (state: RootState) =>
     state.app.rssi.enableUartTerminal;
 export const getPendingEnableUartTerminal = (state: RootState) =>
     state.app.rssi.pendingEnableUartTerminal;
+export const getEnableProgressBars = (state: RootState) =>
+    state.app.rssi.enableProgressBars;
+export const getPendingEnableProgressBars = (state: RootState) =>
+    state.app.rssi.pendingEnableProgressBars;
 export const getIsPhyFrozen = (state: RootState) => state.app.rssi.isPhyFrozen;
 
 export const getNoDataReceived = (state: RootState) =>
@@ -301,6 +319,8 @@ export const {
     applyEnableGraphOnSinglePhy,
     setEnableUartTerminal,
     applyEnableUartTerminal,
+    setEnableProgressBars,
+    applyEnableProgressBars,
     setIsPhyFrozen,
     resetIsPhyFrozen,
     setPhyEnabled,
