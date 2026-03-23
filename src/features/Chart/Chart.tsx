@@ -90,6 +90,17 @@ const throughputLabelPlugin = {
 
             const halfHeight = (bar.height as number) / 2;
             const yBottom = (bar.y as number) + halfHeight;
+            const phyCount = meta.data.length;
+            const barHeight = Math.max(1, bar.height as number);
+
+            let fontSizeLabel = Math.max(10, Math.floor(barHeight * 0.55));
+            if (phyCount <= 5) {
+                fontSizeLabel = Math.max(fontSizeLabel, 18);
+            }
+
+            const paddingX = Math.max(6, Math.round(fontSizeLabel * 0.35));
+            const paddingY = Math.max(3, Math.round(fontSizeLabel * 0.2));
+            const radius = Math.max(4, Math.round(fontSizeLabel * 0.3));
 
             // Draw 0-100% bar directly below this PHY's bar.
             // Clamp Y so the bar and its label always fit in the chart area.
@@ -154,9 +165,14 @@ const throughputLabelPlugin = {
             }
 
             const textX = xLeft + 10;
-            const textY = yBottom + 50;
+            const textY = (bar.y as number) - fontSizeLabel / 2 - 1;
 
-            if (textY > chartArea.bottom) return;
+            if (
+                textY - paddingY < chartArea.top ||
+                textY + fontSizeLabel + paddingY > chartArea.bottom
+            ) {
+                return;
+            }
 
             const rawValue = throughputData[index];
             const safeValue =
@@ -169,13 +185,10 @@ const throughputLabelPlugin = {
 
             ctx.save();
             ctx.font =
-                'bold 26px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+                `bold ${fontSizeLabel}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
             const metrics = ctx.measureText(label);
-            const paddingX = 10;
-            const paddingY = 10;
             const boxWidth = metrics.width + paddingX * 2;
-            const boxHeight = 26 + paddingY * 2;
-            const radius = 8;
+            const boxHeight = fontSizeLabel + paddingY * 2;
             const boxX = textX - paddingX;
             const boxY = textY - paddingY;
 
@@ -226,19 +239,19 @@ const throughputLabelPlugin = {
 
             ctx.save();
             ctx.font =
-                'bold 26px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+                `bold ${fontSizeLabel}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
             const maxMetrics = ctx.measureText(maxLabel);
-            const maxPaddingX = 10;
-            const maxPaddingY = 10;
+            const maxPaddingX = paddingX;
+            const maxPaddingY = paddingY;
             const maxBoxWidth = maxMetrics.width + maxPaddingX * 2;
-            const maxBoxHeight = 26 + maxPaddingY * 2;
-            const maxRadius = 8;
+            const maxBoxHeight = fontSizeLabel + maxPaddingY * 2;
+            const maxRadius = radius;
             // Align the RIGHT edge of the box with the x-position for safeMax
             // (the right edge of the grey max-throughput bar), then clamp so
             // the whole box stays inside the chart area.
             const xMax = xScale.getPixelForValue(safeMax);
             let maxBoxX = xMax - maxBoxWidth;
-            const minGap = 50;
+            const minGap = Math.max(12, Math.round(fontSizeLabel * 1.2));
             const currentBoxRight = boxX + boxWidth;
             if (maxBoxX < currentBoxRight + minGap) {
                 maxBoxX = currentBoxRight + minGap;

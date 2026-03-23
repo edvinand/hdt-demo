@@ -41,16 +41,22 @@ export const deviceSetupConfig: DeviceSetupConfig = {
         ),
         jprogDeviceSetup(
             [
-                {
-                    key: 'nrf52_family',
-                    fw: getAppFile('fw/rssi-10040.hex'),
-                    fwVersion: 'rssi-fw-1.0.0',
-                    fwIdAddress: 0x2000,
-                },
+                //{
+                //    key: 'nrf52_family',
+                //    fw: getAppFile('fw/rssi-10040.hex'),
+                //    fwVersion: 'rssi-fw-1.0.0',
+                //    fwIdAddress: 0x2000,
+                //},
                 {
                     key: 'PCA10156',
-                    fw: getAppFile('fw/blinky-10156.hex'),
-                    fwVersion: 'blinky-10156',
+                    fw: getAppFile('fw/hdt-nrf54l15.hex'),
+                    fwVersion: 'hdt-nrf54l15',
+                    fwIdAddress: 0x0,
+                },
+                {
+                    key: 'PCA10056',
+                    fw: getAppFile('fw/hdt-nrf52840.hex'),
+                    fwVersion: 'hdt-nrf52840',
                     fwIdAddress: 0x0,
                 },
             ],
@@ -71,11 +77,26 @@ export const openDevice =
         const ports = device.serialPorts;
 
         if (ports && ports.length > 0) {
-            // Prefer VCOM1 (index 1) when available, otherwise fall back to VCOM0 (index 0)
-            const portIndex = ports.length > 1 ? 1 : 0;
+            const boardVersion =
+                device.devkit?.boardVersion?.toUpperCase() ?? '';
+
+            let portIndex: number;
+            if (boardVersion === 'PCA10056') {
+                // nRF52840DK: use COM0/VCOM0.
+                portIndex = 0;
+            } else if (boardVersion === 'PCA10156') {
+                // nRF54L15DK: use COM1/VCOM1 when present, otherwise COM0.
+                portIndex = ports.length > 1 ? 1 : 0;
+            } else {
+                // Default behavior for other boards.
+                portIndex = ports.length > 1 ? 1 : 0;
+            }
+
             const comPort = ports[portIndex].comName;
             if (comPort) {
-                logger.info(`Opening Serial port ${comPort}`);
+                logger.info(
+                    `Opening Serial port ${comPort} (board=${boardVersion}, index=${portIndex})`,
+                );
                 const serialPort = new SerialPort(
                     { path: comPort, baudRate: 115200 },
                     error => {

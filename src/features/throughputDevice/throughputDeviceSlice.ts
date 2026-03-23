@@ -27,6 +27,7 @@ interface RssiState {
     pendingEnableGraphOnSinglePhy: boolean;
     enableUartTerminal: boolean;
     pendingEnableUartTerminal: boolean;
+    isPhyFrozen: boolean;
     noDataReceived: boolean;
     phyEnabled: boolean[];
     appliedPhyEnabled: boolean[];
@@ -53,12 +54,13 @@ const initialState: RssiState = {
     pendingEnableGraphOnSinglePhy: true,
     enableUartTerminal: false,
     pendingEnableUartTerminal: false,
+    isPhyFrozen: false,
     noDataReceived: false,
-    phyEnabled: [true, true, true, true, true],
-    appliedPhyEnabled: [true, true, true, true, true],
-    phyThroughput: [0, 0, 0, 0, 0],
-    phyUpdatedAt: [0, 0, 0, 0, 0],
-    phyMaxThroughput: [0, 0, 0, 0, 0],
+    phyEnabled: [true, true, true, true, true, true, true],
+    appliedPhyEnabled: [true, true, true, true, true, true, true],
+    phyThroughput: [0, 0, 0, 0, 0, 0, 0],
+    phyUpdatedAt: [0, 0, 0, 0, 0, 0, 0],
+    phyMaxThroughput: [0, 0, 0, 0, 0, 0, 0],
     uartLog: [],
     fileTransferResetTrigger: 0,
 };
@@ -98,6 +100,7 @@ const rssiSlice = createSlice({
             state.dataMax = [];
             state.noDataReceived = false;
             state.isPaused = false;
+            state.isPhyFrozen = false;
         },
 
         loadDefaultConfig: state => {
@@ -159,6 +162,14 @@ const rssiSlice = createSlice({
 
         applyEnableUartTerminal: state => {
             state.enableUartTerminal = state.pendingEnableUartTerminal;
+        },
+
+        setIsPhyFrozen: (state, action: PayloadAction<boolean>) => {
+            state.isPhyFrozen = action.payload;
+        },
+
+        resetIsPhyFrozen: state => {
+            state.isPhyFrozen = false;
         },
 
         setPhyEnabled: (
@@ -257,6 +268,7 @@ export const getEnableUartTerminal = (state: RootState) =>
     state.app.rssi.enableUartTerminal;
 export const getPendingEnableUartTerminal = (state: RootState) =>
     state.app.rssi.pendingEnableUartTerminal;
+export const getIsPhyFrozen = (state: RootState) => state.app.rssi.isPhyFrozen;
 
 export const getNoDataReceived = (state: RootState) =>
     state.app.rssi.noDataReceived;
@@ -289,6 +301,8 @@ export const {
     applyEnableGraphOnSinglePhy,
     setEnableUartTerminal,
     applyEnableUartTerminal,
+    setIsPhyFrozen,
+    resetIsPhyFrozen,
     setPhyEnabled,
     applyCurrentPhyEnabled,
     loadDefaultConfig,

@@ -1,1 +1,9 @@
-export const PHY_LABELS = ['7.5 MBPS', '5 MBPS', '2 MBPS', '2 MBPS', '1 MBPS'];
+export const PHY_LABELS = [
+    'HDT7.5',
+    'HDT6',
+    'HDT4',
+    'HDT3',
+    'HDT2',
+    'LE 2M',
+    'LE 1M',
+];

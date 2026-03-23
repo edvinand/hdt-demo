@@ -18,6 +18,7 @@ import {
     getSerialPort,
     onReceiveNoRssiData,
     onReceiveRssiData,
+    resetIsPhyFrozen,
     resetRssiStore,
     setRssiDevice,
     logUart,
@@ -58,6 +59,11 @@ export default () => {
             serialPort.on('data', data => {
                 clearTimeout(noDataTimeout);
                 dispatch(onReceiveRssiData(data));
+
+                if ((data as Buffer).includes(Buffer.from('$$'))) {
+                    dispatch(resetIsPhyFrozen());
+                }
+
                 const hex = Array.from(data as Buffer)
                     .map(b => b.toString(16).padStart(2, '0'))
                     .join(' ');

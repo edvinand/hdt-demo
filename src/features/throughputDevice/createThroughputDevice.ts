@@ -77,6 +77,8 @@ export const createRssiDevice = (serialPort: SerialPort) => {
         },
         writeConfig,
         toggleLED: () => writeAndDrain('led\r'),
+        freezePhy: () => writeAndDrain('freeze\r'),
+        unfreezePhy: () => writeAndDrain('unfreeze\r'),
         setLogger: (
             fn: (entry: { direction: 'tx' | 'rx'; data: string }) => void,
         ) => {

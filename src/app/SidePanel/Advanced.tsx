@@ -4,22 +4,27 @@
  * SPDX-License-Identifier: LicenseRef-Nordic-4-Clause
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
+    Button,
     NumberInput,
     Toggle,
 } from '@nordicsemiconductor/pc-nrfconnect-shared';
 
 import {
     getConnectionIntervalUnits,
+    getIsConnected,
+    getIsPhyFrozen,
     getPendingEnableGraphOnSinglePhy,
     getPendingEnableUartTerminal,
     getPacketSizeBytes,
     getPendingVirtualFileSizeMb,
+    getRssiDevice,
     setConnectionIntervalUnits,
     setEnableGraphOnSinglePhy,
     setEnableUartTerminal,
+    setIsPhyFrozen,
     setPacketSizeBytes,
     setPendingVirtualFileSizeMb,
 } from '../../features/throughputDevice/throughputDeviceSlice';
@@ -35,8 +40,12 @@ export default () => {
     const pendingVirtualFileSizeMb = useSelector(getPendingVirtualFileSizeMb);
     const connectionIntervalUnits = useSelector(getConnectionIntervalUnits);
     const packetSizeBytes = useSelector(getPacketSizeBytes);
+    const isConnected = useSelector(getIsConnected);
+    const isPhyFrozen = useSelector(getIsPhyFrozen);
+    const rssiDevice = useSelector(getRssiDevice);
     const enableGraphOnSinglePhy = useSelector(getPendingEnableGraphOnSinglePhy);
     const enableUartTerminal = useSelector(getPendingEnableUartTerminal);
+    const [isFreezeCommandInFlight, setIsFreezeCommandInFlight] = useState(false);
 
     const setFileSize = useCallback(
         (value: number) => {
@@ -73,6 +82,23 @@ export default () => {
         },
         [dispatch],
     );
+
+    const onToggleFreezePhy = useCallback(async () => {
+        if (!rssiDevice || isFreezeCommandInFlight) return;
+
+        setIsFreezeCommandInFlight(true);
+        try {
+            if (isPhyFrozen) {
+                await rssiDevice.unfreezePhy();
+                dispatch(setIsPhyFrozen(false));
+            } else {
+                await rssiDevice.freezePhy();
+                dispatch(setIsPhyFrozen(true));
+            }
+        } finally {
+            setIsFreezeCommandInFlight(false);
+        }
+    }, [dispatch, isFreezeCommandInFlight, isPhyFrozen, rssiDevice]);
 
     return (
         <>
@@ -118,6 +144,18 @@ export default () => {
                 >
                     Enable UART terminal
                 </Toggle>
+            </div>
+            <div className="tw-mt-2">
+                <Button
+                    variant="secondary"
+                    className="w-100"
+                    disabled={!isConnected || isFreezeCommandInFlight}
+                    onClick={() => {
+                        onToggleFreezePhy();
+                    }}
+                >
+                    {isPhyFrozen ? 'Unfreeze PHY' : 'Freeze PHY'}
+                </Button>
             </div>
         </>
     );
