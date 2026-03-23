@@ -6,7 +6,11 @@
 
 import React, { useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { Button, useHotKey } from '@nordicsemiconductor/pc-nrfconnect-shared';
+import {
+    Button,
+    selectedDevice,
+    useHotKey,
+} from '@nordicsemiconductor/pc-nrfconnect-shared';
 
 import {
     getDelay,
@@ -33,17 +37,26 @@ export default () => {
     const connectionIntervalUnits = useSelector(getConnectionIntervalUnits);
     const packetSizeBytes = useSelector(getPacketSizeBytes);
     const rssiDevice = useSelector(getRssiDevice);
+    const device = useSelector(selectedDevice);
     const dispatch = useDispatch();
+
+    const isPca10056 =
+        device?.devkit?.boardVersion?.toUpperCase() === 'PCA10056';
 
     const writeConfig = useCallback(() => {
         if (!isConnected) return;
+
+        // For PCA10056, force HDT PHY indices 0-4 to false; only LE 2M/LE 1M are supported.
+        const effectivePhyEnabled = phyEnabled.map((v, i) =>
+            isPca10056 && i < 5 ? false : v,
+        );
 
         dispatch(applyVirtualFileSizeMb());
         dispatch(applyEnableGraphOnSinglePhy());
         dispatch(applyEnableUartTerminal());
         rssiDevice?.writeConfig({
             delay,
-            phyEnabled,
+            phyEnabled: effectivePhyEnabled,
             virtualFileSizeMb: pendingVirtualFileSizeMb,
             connectionIntervalUnits,
             packetSizeBytes,
@@ -53,6 +66,7 @@ export default () => {
         delay,
         dispatch,
         isConnected,
+        isPca10056,
         phyEnabled,
         rssiDevice,
         pendingVirtualFileSizeMb,
