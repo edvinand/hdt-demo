@@ -1,0 +1,19 @@
+/*
+ * Copyright (c) 2015 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: LicenseRef-Nordic-4-Clause
+ */
+
+:root {
+    --hdt-font-family: 'Roboto', 'Segoe UI', sans-serif;
+}
+
+html,
+body,
+#root {
+    font-family: var(--hdt-font-family);
+}
+
+* {
+    font-family: inherit;
+}

@@ -9,11 +9,14 @@ import { colors } from '@nordicsemiconductor/pc-nrfconnect-shared';
 export default {
     label: colors.black,
     bar: {
-        normal: colors.lightBlue200,
+        normal: colors.nordicBlue,
         normalMax: colors.blueSlate,
         highlight: colors.blueSlate,
         advertisement: colors.green,
         advertisementMax: colors.green200,
-        background: colors.gray100,
+        background: colors.gray50,
+        currentBadge: colors.blueSlate,
+        maxBadge: colors.nordicBlue,
+        badgeText: colors.white,
     },
 };

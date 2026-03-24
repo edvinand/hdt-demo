@@ -10,6 +10,7 @@ import { Group, SidePanel } from '@nordicsemiconductor/pc-nrfconnect-shared';
 import useThroughputDevice from '../../features/throughputDevice/useThroughputDevice';
 import ControlButtons from './ControlButtons';
 import Delay from './Delay';
+import DisplayTypeSelector from './DisplayTypeSelector';
 import ToggleLed from './ToggleLed';
 import ConfigPhySelector from './ConfigPhySelector';
 import Advanced from './Advanced';
@@ -21,6 +22,10 @@ export default () => {
         <SidePanel>
             <Group heading="Controls">
                 <ControlButtons />
+            </Group>
+
+            <Group heading="DISPLAY TYPE">
+                <DisplayTypeSelector />
             </Group>
 
             <Group heading="SELECTED PHYS">

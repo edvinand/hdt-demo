@@ -36,6 +36,7 @@ interface RssiState {
     phyThroughput: number[];
     phyUpdatedAt: number[];
     phyMaxThroughput: number[];
+    displayType: 'bars' | 'gauge';
     uartLog: { direction: 'tx' | 'rx'; text: string }[];
     fileTransferResetTrigger: number;
     serialPort?: SerialPort<AutoDetectTypes>;
@@ -65,6 +66,7 @@ const initialState: RssiState = {
     phyThroughput: [0, 0, 0, 0, 0, 0, 0],
     phyUpdatedAt: [0, 0, 0, 0, 0, 0, 0],
     phyMaxThroughput: [0, 0, 0, 0, 0, 0, 0],
+    displayType: 'bars',
     uartLog: [],
     fileTransferResetTrigger: 0,
 };
@@ -197,6 +199,13 @@ const rssiSlice = createSlice({
             }
         },
 
+        setDisplayType: (
+            state,
+            action: PayloadAction<'bars' | 'gauge'>,
+        ) => {
+            state.displayType = action.payload;
+        },
+
         logUart: (
             state,
             action: PayloadAction<{ direction: 'tx' | 'rx'; text: string }>,
@@ -300,6 +309,7 @@ export const getPhyUpdatedAt = (state: RootState) =>
     state.app.rssi.phyUpdatedAt;
 export const getPhyMaxThroughput = (state: RootState) =>
     state.app.rssi.phyMaxThroughput;
+export const getDisplayType = (state: RootState) => state.app.rssi.displayType;
 export const getUartLog = (state: RootState) => state.app.rssi.uartLog;
 
 export const {
@@ -326,6 +336,7 @@ export const {
     setPhyEnabled,
     applyCurrentPhyEnabled,
     loadDefaultConfig,
+    setDisplayType,
     logUart,
     onReceiveRssiData,
     onReceiveNoRssiData,

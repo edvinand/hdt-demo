@@ -36,12 +36,18 @@ import {
     getEnableGraphOnSinglePhy,
     getEnableProgressBars,
     getEnableUartTerminal,
+    getDisplayType,
 } from '../throughputDevice/throughputDeviceSlice';
 import UartTerminal from '../throughputDevice/UartTerminal';
 import { PHY_LABELS } from '../throughputDevice/phyLabels';
 import color from './rssiColors';
+import GaugeView from './GaugeView';
 
 import './alert.scss';
+
+// Per-PHY theoretical maximum kbps (index matches PHY_LABELS and appliedPhyEnabled)
+const PHY_MAX_KBPS = [7500, 6000, 4000, 3000, 2000, 2000, 1000];
+const ROBOTO_FONT_FAMILY = 'Roboto, "Segoe UI", sans-serif';
 
 const throughputLabelPlugin = {
     id: 'throughputLabelPlugin',
@@ -77,13 +83,24 @@ const throughputLabelPlugin = {
         const fileSizeMbData: number[] = fileTransferDataset?.fileSizeMb ?? [];
 
         const maxData: number[] =
-            maxIndex >= 0 ? chart.data.datasets[maxIndex].data ?? [] : [];
+            maxIndex >= 0 ? (chart.data.datasets[maxIndex] as any).actualMaxValues ?? [] : [];
 
         const xLeft = xScale.getPixelForValue(0);
         const trackWidth = chartArea.right - xLeft;
 
         const maxMeta =
             maxIndex >= 0 ? chart.getDatasetMeta(maxIndex) : undefined;
+
+        // Compute available height per category slot so all rows
+        // shrink equally when space is tight instead of only the last.
+        const phyCount = meta.data.length;
+        const slotHeight =
+            phyCount > 1
+                ? Math.abs(
+                      (meta.data[1].y as number) -
+                          (meta.data[0].y as number),
+                  )
+                : chartArea.bottom - chartArea.top;
 
         meta.data.forEach((bar: any, index: number) => {
             const percent = fileTransferData[index] ?? 0;
@@ -92,7 +109,6 @@ const throughputLabelPlugin = {
 
             const halfHeight = (bar.height as number) / 2;
             const yBottom = (bar.y as number) + halfHeight;
-            const phyCount = meta.data.length;
             const barHeight = Math.max(1, bar.height as number);
 
             let fontSizeLabel = Math.max(10, Math.floor(barHeight * 0.55));
@@ -104,12 +120,16 @@ const throughputLabelPlugin = {
             const paddingY = Math.max(3, Math.round(fontSizeLabel * 0.2));
             const radius = Math.max(4, Math.round(fontSizeLabel * 0.3));
 
-            // Draw 0-100% bar directly below this PHY's bar.
-            // Clamp Y so the bar and its label always fit in the chart area.
-            let trackY = yBottom + 8;
-            const trackHeight = 24;
-            const maxTrackTop = chartArea.bottom - (trackHeight + 20);
-            if (trackY > maxTrackTop) trackY = maxTrackTop;
+            // Draw 0-100% progress bar below the throughput bar.
+            // Scale gap and track height to the available slot so every
+            // row is treated equally (no special squishing of the last bar).
+            const spaceBelow = slotHeight / 2 - halfHeight;
+            const trackGap = Math.max(2, Math.round(spaceBelow * 0.15));
+            const trackHeight = Math.min(
+                barHeight*0.5,
+                Math.max(10, Math.round(spaceBelow * 0.55)),
+            );
+            const trackY = yBottom + trackGap;
 
             if (
                 showProgressBars &&
@@ -146,9 +166,10 @@ const throughputLabelPlugin = {
                     bestSeconds,
                 ).padStart(2, '0')}`;
 
+                const trackFontSize = Math.max(8, Math.min(16, trackHeight - 4));
                 ctx.fillStyle = color.label;
                 ctx.font =
-                    '16px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+                    `${trackFontSize}px ${ROBOTO_FONT_FAMILY}`;
                 ctx.textAlign = 'left';
                 ctx.textBaseline = 'bottom';
                 ctx.fillText(
@@ -187,53 +208,7 @@ const throughputLabelPlugin = {
                 Number.isNaN(rawValue)
                     ? 0
                     : rawValue;
-            const label = `${safeValue} kbps`;
 
-            ctx.save();
-            ctx.font =
-                `bold ${fontSizeLabel}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
-            const metrics = ctx.measureText(label);
-            const boxWidth = metrics.width + paddingX * 2;
-            const boxHeight = fontSizeLabel + paddingY * 2;
-            const boxX = textX - paddingX;
-            const boxY = textY - paddingY;
-
-            ctx.fillStyle = color.bar.normal;
-            ctx.beginPath();
-            ctx.moveTo(boxX + radius, boxY);
-            ctx.lineTo(boxX + boxWidth - radius, boxY);
-            ctx.quadraticCurveTo(
-                boxX + boxWidth,
-                boxY,
-                boxX + boxWidth,
-                boxY + radius,
-            );
-            ctx.lineTo(boxX + boxWidth, boxY + boxHeight - radius);
-            ctx.quadraticCurveTo(
-                boxX + boxWidth,
-                boxY + boxHeight,
-                boxX + boxWidth - radius,
-                boxY + boxHeight,
-            );
-            ctx.lineTo(boxX + radius, boxY + boxHeight);
-            ctx.quadraticCurveTo(
-                boxX,
-                boxY + boxHeight,
-                boxX,
-                boxY + boxHeight - radius,
-            );
-            ctx.lineTo(boxX, boxY + radius);
-            ctx.quadraticCurveTo(boxX, boxY, boxX + radius, boxY);
-            ctx.closePath();
-            ctx.fill();
-
-            ctx.fillStyle = color.bar.highlight;
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'top';
-            ctx.fillText(label, textX, textY);
-            ctx.restore();
-
-            // Max throughput label on the opposite side using the same style
             const rawMax = maxData[index];
             const safeMax =
                 rawMax === undefined ||
@@ -241,75 +216,30 @@ const throughputLabelPlugin = {
                 Number.isNaN(rawMax)
                     ? 0
                     : rawMax;
-            const maxLabel = `${safeMax} kbps`;
+
+            // Black vertical line at the max recorded value position
+            if (safeMax > 0) {
+                const xMax = xScale.getPixelForValue(safeMax);
+                ctx.save();
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(xMax, (bar.y as number) - halfHeight);
+                ctx.lineTo(xMax, (bar.y as number) + halfHeight);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // "lastValue / maxValue kbps" text inside the bar
+            const label = `${safeValue} / ${safeMax} kbps`;
 
             ctx.save();
             ctx.font =
-                `bold ${fontSizeLabel}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
-            const maxMetrics = ctx.measureText(maxLabel);
-            const maxPaddingX = paddingX;
-            const maxPaddingY = paddingY;
-            const maxBoxWidth = maxMetrics.width + maxPaddingX * 2;
-            const maxBoxHeight = fontSizeLabel + maxPaddingY * 2;
-            const maxRadius = radius;
-            // Align the RIGHT edge of the box with the x-position for safeMax
-            // (the right edge of the grey max-throughput bar), then clamp so
-            // the whole box stays inside the chart area.
-            const xMax = xScale.getPixelForValue(safeMax);
-            let maxBoxX = xMax - maxBoxWidth;
-            const minGap = Math.max(12, Math.round(fontSizeLabel * 1.2));
-            const currentBoxRight = boxX + boxWidth;
-            if (maxBoxX < currentBoxRight + minGap) {
-                maxBoxX = currentBoxRight + minGap;
-            }
-            if (maxBoxX < xLeft) maxBoxX = xLeft;
-            if (maxBoxX + maxBoxWidth > chartArea.right) {
-                maxBoxX = chartArea.right - maxBoxWidth;
-            }
-
-            const maxBoxY = textY - maxPaddingY;
-
-            ctx.fillStyle = color.bar.background;
-            ctx.beginPath();
-            ctx.moveTo(maxBoxX + maxRadius, maxBoxY);
-            ctx.lineTo(maxBoxX + maxBoxWidth - maxRadius, maxBoxY);
-            ctx.quadraticCurveTo(
-                maxBoxX + maxBoxWidth,
-                maxBoxY,
-                maxBoxX + maxBoxWidth,
-                maxBoxY + maxRadius,
-            );
-            ctx.lineTo(
-                maxBoxX + maxBoxWidth,
-                maxBoxY + maxBoxHeight - maxRadius,
-            );
-            ctx.quadraticCurveTo(
-                maxBoxX + maxBoxWidth,
-                maxBoxY + maxBoxHeight,
-                maxBoxX + maxBoxWidth - maxRadius,
-                maxBoxY + maxBoxHeight,
-            );
-            ctx.lineTo(maxBoxX + maxRadius, maxBoxY + maxBoxHeight);
-            ctx.quadraticCurveTo(
-                maxBoxX,
-                maxBoxY + maxBoxHeight,
-                maxBoxX,
-                maxBoxY + maxBoxHeight - maxRadius,
-            );
-            ctx.lineTo(maxBoxX, maxBoxY + maxRadius);
-            ctx.quadraticCurveTo(
-                maxBoxX,
-                maxBoxY,
-                maxBoxX + maxRadius,
-                maxBoxY,
-            );
-            ctx.closePath();
-            ctx.fill();
-
-            ctx.fillStyle = color.bar.highlight;
+                `bold ${fontSizeLabel}px ${ROBOTO_FONT_FAMILY}`;
+            ctx.fillStyle = color.bar.badgeText;
             ctx.textAlign = 'left';
             ctx.textBaseline = 'top';
-            ctx.fillText(maxLabel, maxBoxX + maxPaddingX, textY);
+            ctx.fillText(label, textX, textY);
             ctx.restore();
         });
     },
@@ -325,6 +255,8 @@ Chart.register(
     PointElement,
     throughputLabelPlugin,
 );
+
+Chart.defaults.font.family = ROBOTO_FONT_FAMILY;
 
 const ANIMATION_DURATION_MS = 500;
 const MIN_GRAPH_MAX_KBPS = 100;
@@ -375,6 +307,7 @@ export default () => {
     const enableGraphOnSinglePhy = useSelector(getEnableGraphOnSinglePhy);
     const enableProgressBars = useSelector(getEnableProgressBars);
     const enableUartTerminal = useSelector(getEnableUartTerminal);
+    const displayType = useSelector(getDisplayType);
     const device = useSelector(selectedDevice);
     const readbackProtection = useSelector(getReadbackProtection);
     const noData = useSelector(getNoDataReceived);
@@ -391,13 +324,13 @@ export default () => {
     const visibleThroughput = enabledIndices.map(
         index => activeThroughput[index] ?? 0,
     );
+    const visibleCapacityMax = enabledIndices.map(index => PHY_MAX_KBPS[index] ?? 1000);
+    const visibleChartMax = Math.max(100, ...visibleCapacityMax);
     const isSinglePhyActive = enabledIndices.length === 1;
     const singleActivePhyIndex = isSinglePhyActive ? enabledIndices[0] : -1;
     const shouldShowSinglePhyGraph =
         enableGraphOnSinglePhy && isSinglePhyActive;
-    const maxValue = Math.max(1, ...phyThroughput, ...phyMaxThroughput);
     const [now, setNow] = useState(() => Date.now());
-    const [stickyMax, setStickyMax] = useState(maxValue);
     const [lastUpdatedPhyIndex, setLastUpdatedPhyIndex] = useState<number>(-1);
     const [fileTransferProgress, setFileTransferProgress] = useState<
         number[]
@@ -431,15 +364,6 @@ export default () => {
 
         setLastUpdatedPhyIndex(lastUpdatedIndex);
     }, [phyUpdatedAt]);
-
-    useEffect(() => {
-        setStickyMax(prev => Math.max(prev, maxValue));
-    }, [maxValue]);
-
-    const roundedStickyMax = Math.max(
-        100,
-        Math.ceil((stickyMax || 0) / 100) * 100,
-    );
 
     useEffect(() => {
         const id = setInterval(() => setNow(Date.now()), 100);
@@ -644,12 +568,13 @@ export default () => {
                         borderWidth: 0,
                         grouped: false,
                         order: 1,
-                        barThickness: 50,
+                        maxBarThickness: 50,
                         datalabels: {
                             display: false,
                         },
-                        data: visibleMaxThroughput,
-                    },
+                        data: visibleCapacityMax,
+                        actualMaxValues: visibleMaxThroughput,
+                    } as any,
                     {
                         label: 'filetransfer',
                         backgroundColor: 'transparent',
@@ -683,7 +608,7 @@ export default () => {
                         borderWidth: 0,
                         grouped: false,
                         order: 0,
-                        barThickness: 50,
+                        maxBarThickness: 50,
                         data: visibleThroughput,
                         datalabels: {
                             display: false,
@@ -722,7 +647,7 @@ export default () => {
                             precision: 0,
                         },
                         min: 0,
-                        max: roundedStickyMax,
+                        max: visibleChartMax,
                     },
                     y: {
                         type: 'category',
@@ -749,7 +674,7 @@ export default () => {
     );
 
     return (
-        <div className="d-flex flex-column h-100">
+        <div className="d-flex flex-column h-100 chart-main-pane">
             {device &&
                 noData &&
                 readbackProtection !== 'NRFDL_PROTECTION_STATUS_NONE' && (
@@ -769,7 +694,100 @@ export default () => {
                 )}
             <div className="position-relative flex-grow-1 overflow-hidden">
                 <Main>
-                    {shouldShowSinglePhyGraph ? (
+                    {displayType === 'gauge' ? (
+                        <GaugeView
+                            singlePhyTopContent={
+                                shouldShowSinglePhyGraph ? (
+                                    <Line
+                                        data={{
+                                            datasets: [
+                                                {
+                                                    label: 'Transfer history',
+                                                    data: singlePhyGraphPoints,
+                                                    parsing: false,
+                                                    fill: true,
+                                                    borderColor: color.bar.highlight,
+                                                    backgroundColor: (context: any) =>
+                                                        createTransferHistoryGradient(
+                                                            context.chart,
+                                                        ),
+                                                    pointRadius: 0,
+                                                    pointHitRadius: 8,
+                                                    pointHoverRadius: 0,
+                                                    tension: 0.25,
+                                                    borderWidth: 2,
+                                                },
+                                            ],
+                                        }}
+                                        options={{
+                                            responsive: true,
+                                            animation: false,
+                                            maintainAspectRatio: false,
+                                            plugins: {
+                                                legend: { display: false },
+                                                tooltip: { enabled: false },
+                                                datalabels: { display: false },
+                                                title: {
+                                                    display: true,
+                                                    text: `${PHY_LABELS[singleActivePhyIndex]} transfer history`,
+                                                    align: 'start',
+                                                    color: color.label,
+                                                    font: { size: 14 },
+                                                    padding: { bottom: 12 },
+                                                },
+                                            },
+                                            scales: {
+                                                x: {
+                                                    type: 'linear',
+                                                    min: 0,
+                                                    max: GRAPH_X_MAX_PERCENT,
+                                                    grid: {
+                                                        color: withOpacity(
+                                                            color.bar.highlight,
+                                                            0.08,
+                                                        ),
+                                                    },
+                                                    border: { display: false },
+                                                    ticks: {
+                                                        color: color.label,
+                                                        maxTicksLimit: 6,
+                                                        callback: (
+                                                            value: string | number,
+                                                        ) => `${value}%`,
+                                                    },
+                                                },
+                                                y: {
+                                                    min: 0,
+                                                    max: singlePhyGraphMax,
+                                                    grid: {
+                                                        color: withOpacity(
+                                                            color.bar.highlight,
+                                                            0.08,
+                                                        ),
+                                                    },
+                                                    border: { display: false },
+                                                    ticks: {
+                                                        color: color.label,
+                                                        precision: 0,
+                                                        maxTicksLimit: 4,
+                                                    },
+                                                    title: {
+                                                        display: true,
+                                                        text: 'kbps',
+                                                        color: color.label,
+                                                        font: { size: 12 },
+                                                    },
+                                                },
+                                            },
+                                            elements: {
+                                                line: { capBezierPoints: true },
+                                            },
+                                        } as any}
+                                    />
+                                ) : undefined
+                            }
+                        />
+                    ) : shouldShowSinglePhyGraph ? (
                         <div className="d-flex flex-column h-100" style={{ gap: 16 }}>
                             <div style={{ flex: '0 0 38%', minHeight: 0 }}>
                                 <Line
