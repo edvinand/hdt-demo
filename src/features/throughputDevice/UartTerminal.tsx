@@ -32,7 +32,7 @@ const UartTerminal = () => {
                 height: 160,
                 backgroundColor: 'rgba(0, 0, 0, 0.8)',
                 color: '#0f0',
-                fontFamily: 'Roboto, "Segoe UI", sans-serif',
+                fontFamily: 'monospace',
                 fontSize: 10,
                 padding: 4,
                 borderRadius: 4,

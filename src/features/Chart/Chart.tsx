@@ -129,7 +129,7 @@ const throughputLabelPlugin = {
                 barHeight*0.5,
                 Math.max(10, Math.round(spaceBelow * 0.55)),
             );
-            const trackY = yBottom + trackGap;
+            const trackY = yBottom + trackGap +3;
 
             if (
                 showProgressBars &&
@@ -139,7 +139,7 @@ const throughputLabelPlugin = {
                 ctx.save();
                 // Grey track and blue fill for file-transfer progress
                 ctx.fillStyle = color.bar.background; // grey track
-                ctx.fillRect(xLeft, trackY, trackWidth, trackHeight);
+                ctx.fillRect(xLeft, trackY-1, trackWidth, trackHeight);
                 ctx.fillStyle = color.bar.normal; // blue fill
                 const clampedPercent = Math.max(0, Math.min(100, percent));
                 ctx.fillRect(
@@ -171,32 +171,32 @@ const throughputLabelPlugin = {
                 ctx.font =
                     `${trackFontSize}px ${ROBOTO_FONT_FAMILY}`;
                 ctx.textAlign = 'left';
-                ctx.textBaseline = 'bottom';
+                ctx.textBaseline = 'middle';
                 ctx.fillText(
                     `${Math.round(
                         clampedPercent,
                     )}% of ${fileSizeMb}MB (${timeLabel})`,
                     xLeft + 4,
-                    trackY + trackHeight - 2,
+                    trackY + trackHeight / 2,
                 );
 
                 // Timestamp label on the right side of the bar (best completion time so far)
                 ctx.textAlign = 'right';
-                ctx.textBaseline = 'bottom';
+                ctx.textBaseline = 'middle';
                 ctx.fillText(
                     `(${bestTimeLabel})`,
                     xLeft + trackWidth - 4,
-                    trackY + trackHeight - 2,
+                    trackY + trackHeight / 2,
                 );
                 ctx.restore();
             }
 
             const textX = xLeft + 10;
-            const textY = (bar.y as number) - fontSizeLabel / 2 - 1;
+            const textY = (bar.y as number) + 3; // +3 to nudge it down to the center line.
 
             if (
-                textY - paddingY < chartArea.top ||
-                textY + fontSizeLabel + paddingY > chartArea.bottom
+                textY - halfHeight < chartArea.top ||
+                textY + halfHeight > chartArea.bottom
             ) {
                 return;
             }
@@ -238,7 +238,7 @@ const throughputLabelPlugin = {
                 `bold ${fontSizeLabel}px ${ROBOTO_FONT_FAMILY}`;
             ctx.fillStyle = color.bar.badgeText;
             ctx.textAlign = 'left';
-            ctx.textBaseline = 'top';
+            ctx.textBaseline = 'middle';
             ctx.fillText(label, textX, textY);
             ctx.restore();
         });
