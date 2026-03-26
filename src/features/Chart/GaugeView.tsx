@@ -6,7 +6,6 @@
 
 import React from 'react';
 import { useSelector } from 'react-redux';
-import { MasonryLayout } from '@nordicsemiconductor/pc-nrfconnect-shared';
 
 import {
     getAppliedPhyEnabled,
@@ -35,6 +34,12 @@ const GaugeView = ({ singlePhyTopContent }: GaugeViewProps) => {
     const enabledIndices = appliedPhyEnabled
         .map((enabled, index) => (enabled ? index : -1))
         .filter(index => index >= 0);
+
+    // Calculate shared max capacity from all enabled PHYs (same scale as bars view)
+    const maxSharedCapacity = Math.max(
+        1,
+        ...enabledIndices.map(idx => PHY_MAX_KBPS[idx] ?? 1000),
+    );
 
     // Determine the most recently updated PHY for highlighting
     let lastUpdatedIndex = -1;
@@ -71,6 +76,7 @@ const GaugeView = ({ singlePhyTopContent }: GaugeViewProps) => {
                         currentKbps={phyThroughput[phyIdx] ?? 0}
                         maxRecordedKbps={phyMaxThroughput[phyIdx] ?? 0}
                         capacityKbps={PHY_MAX_KBPS[phyIdx] ?? 1000}
+                        maxSharedCapacityKbps={maxSharedCapacity}
                         phyLabel={PHY_LABELS[phyIdx]}
                         isHighlighted={phyIdx === lastUpdatedIndex}
                         size="large"
@@ -80,39 +86,73 @@ const GaugeView = ({ singlePhyTopContent }: GaugeViewProps) => {
         );
     }
 
-    // Multi-PHY: MasonryLayout tiles
+    // Layout rules for multi-PHY gauge grid:
+    // 2 → 1 row of 2, 3 → 2+1, 4 → 2×2, 5 → 3+2, 6 → 3+3, 7 → 4+3
+    const count = enabledIndices.length;
+    const firstRowCount =
+        count <= 2 ? count : count <= 4 ? 2 : count <= 5 ? 3 : count <= 6 ? 3 : 4;
+
+    const firstRow = enabledIndices.slice(0, firstRowCount);
+    const secondRow = enabledIndices.slice(firstRowCount);
+
+    const renderTile = (phyIdx: number) => (
+        <div
+            key={PHY_LABELS[phyIdx]}
+            style={{
+                background: '#ffffff',
+                borderRadius: 8,
+                padding: 16,
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                flex: '1 1 0',
+                minWidth: 0,
+            }}
+        >
+            <ThroughputGauge
+                currentKbps={phyThroughput[phyIdx] ?? 0}
+                maxRecordedKbps={phyMaxThroughput[phyIdx] ?? 0}
+                maxSharedCapacityKbps={maxSharedCapacity}
+                capacityKbps={PHY_MAX_KBPS[phyIdx] ?? 1000}
+                phyLabel={PHY_LABELS[phyIdx]}
+                isHighlighted={phyIdx === lastUpdatedIndex}
+            />
+        </div>
+    );
+
     return (
         <div
             style={{
                 height: '100%',
                 overflow: 'auto',
                 padding: 8,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
             }}
         >
-            <MasonryLayout minWidth={300}>
-                {enabledIndices.map(phyIdx => (
-                    <div
-                        key={PHY_LABELS[phyIdx]}
-                        style={{
-                            background: '#ffffff',
-                            borderRadius: 8,
-                            padding: 16,
-                            display: 'flex',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            minHeight: 220,
-                        }}
-                    >
-                        <ThroughputGauge
-                            currentKbps={phyThroughput[phyIdx] ?? 0}
-                            maxRecordedKbps={phyMaxThroughput[phyIdx] ?? 0}
-                            capacityKbps={PHY_MAX_KBPS[phyIdx] ?? 1000}
-                            phyLabel={PHY_LABELS[phyIdx]}
-                            isHighlighted={phyIdx === lastUpdatedIndex}
-                        />
-                    </div>
-                ))}
-            </MasonryLayout>
+            <div
+                style={{
+                    display: 'flex',
+                    gap: 8,
+                    flex: '1 1 0',
+                    minHeight: 0,
+                }}
+            >
+                {firstRow.map(renderTile)}
+            </div>
+            {secondRow.length > 0 && (
+                <div
+                    style={{
+                        display: 'flex',
+                        gap: 8,
+                        flex: '1 1 0',
+                        minHeight: 0,
+                    }}
+                >
+                    {secondRow.map(renderTile)}
+                </div>
+            )}
         </div>
     );
 };

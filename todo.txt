@@ -17,3 +17,27 @@ two pairs of demos?
 Channel map selection hidden in "advanced".
 
 
+HDT 2
+HDT 4
+HDT 5
+HDT 
+
+
+
+Update names: HDT BLE 2M, HDT 2
+
+Freeze PHY
+Wait until one file transfer finishes before 
+Autodetect possible PHYs depending on the boards.
+
+
+
+
+
+Explain why 2M is not 2M throughput.
+Cursor + Opus 4.6
+Inspectable elements.
+Text: Roboto
+Gauge view
+Gjør progress bar optional
+Gauges må ha samme skala

@@ -43,6 +43,7 @@ interface ThroughputGaugeProps {
     currentKbps: number;
     maxRecordedKbps: number;
     capacityKbps: number;
+    maxSharedCapacityKbps?: number; // Shared scale across all gauges (defaults to capacityKbps if not provided)
     phyLabel: string;
     isHighlighted?: boolean;
     size?: 'normal' | 'large';
@@ -52,6 +53,7 @@ const ThroughputGauge = ({
     currentKbps,
     maxRecordedKbps,
     capacityKbps,
+    maxSharedCapacityKbps,
     phyLabel,
     isHighlighted = false,
     size = 'normal',
@@ -63,8 +65,15 @@ const ThroughputGauge = ({
     const r = (viewSize - strokeWidth) / 2 - 4;
 
     const safeCapacity = Math.max(1, capacityKbps);
-    const currentFraction = Math.min(1, Math.max(0, currentKbps / safeCapacity));
-    const maxFraction = Math.min(1, Math.max(0, maxRecordedKbps / safeCapacity));
+    const safeSharedCapacity = Math.max(1, maxSharedCapacityKbps ?? capacityKbps);
+
+    // Background arc scaled to individual PHY capacity
+    const capacityFraction = Math.min(1, Math.max(0, safeCapacity / safeSharedCapacity));
+    const capacityEndDeg = ARC_START_DEG + ARC_SWEEP_DEG * capacityFraction;
+
+    // Fill arc scaled to shared capacity (same as bars view)
+    const currentFraction = Math.min(1, Math.max(0, currentKbps / safeSharedCapacity));
+    const maxFraction = Math.min(1, Math.max(0, maxRecordedKbps / safeSharedCapacity));
 
     // Arc angles for current value
     const currentEndDeg =
@@ -73,8 +82,8 @@ const ThroughputGauge = ({
     // Max tick angle
     const maxTickDeg = ARC_START_DEG + ARC_SWEEP_DEG * maxFraction;
 
-    // Full background arc
-    const bgArcPath = describeArc(cx, cy, r, ARC_START_DEG, ARC_END_DEG);
+    // Background arc scaled to individual PHY capacity
+    const bgArcPath = describeArc(cx, cy, r, ARC_START_DEG, capacityEndDeg);
 
     // Filled arc for current value (avoid zero-length arc)
     const fillArcPath =
@@ -93,6 +102,7 @@ const ThroughputGauge = ({
     const labelFontSize = size === 'large' ? 18 : 14;
     const valueFontSize = size === 'large' ? 16 : 12;
     const phyFontSize = size === 'large' ? 14 : 11;
+    const phyLabelY = cy + r + strokeWidth / 2 + (size === 'large' ? 4 : 3);
 
     return (
         <div
@@ -176,21 +186,23 @@ const ThroughputGauge = ({
                     fontFamily='Roboto, "Segoe UI", sans-serif'
                     opacity={0.6}
                 >
-                    max {safeCapacity} kbps
+                    PHY: {safeCapacity} kbps
+                </text>
+
+                {/* PHY name directly below arc */}
+                <text
+                    x={cx}
+                    y={phyLabelY}
+                    textAnchor="middle"
+                    dominantBaseline="hanging"
+                    fill={color.label}
+                    fontSize={size === 'large' ? 16 : 13}
+                    fontWeight="bold"
+                    fontFamily='Roboto, "Segoe UI", sans-serif'
+                >
+                    {phyLabel}
                 </text>
             </svg>
-            <div
-                style={{
-                    textAlign: 'center',
-                    fontWeight: 'bold',
-                    fontSize: size === 'large' ? 16 : 13,
-                    color: color.label,
-                    fontFamily: 'Roboto, "Segoe UI", sans-serif',
-                    marginTop: -8,
-                }}
-            >
-                {phyLabel}
-            </div>
         </div>
     );
 };
