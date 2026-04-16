@@ -70,6 +70,14 @@ export const createRssiDevice = (serialPort: SerialPort) => {
         await writeAndDrain(cmd);
     };
 
+    const sendUartCommand = (cmd: string) => {
+        // Trim whitespace and append CR if not already present
+        const trimmed = cmd.trim();
+        if (!trimmed) return Promise.resolve(); // Silently ignore empty commands
+        const cmdWithCr = trimmed.endsWith('\r') ? trimmed : `${trimmed}\r`;
+        return writeAndDrain(cmdWithCr);
+    };
+
     return {
         pauseReading,
         stopReading: async () => {
@@ -79,6 +87,7 @@ export const createRssiDevice = (serialPort: SerialPort) => {
         toggleLED: () => writeAndDrain('led\r'),
         freezePhy: () => writeAndDrain('freeze\r'),
         unfreezePhy: () => writeAndDrain('unfreeze\r'),
+        sendUartCommand,
         setLogger: (
             fn: (entry: { direction: 'tx' | 'rx'; data: string }) => void,
         ) => {

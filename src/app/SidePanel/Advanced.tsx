@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: LicenseRef-Nordic-4-Clause
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
     Button,
@@ -49,6 +49,9 @@ export default () => {
     const enableProgressBars = useSelector(getPendingEnableProgressBars);
     const enableUartTerminal = useSelector(getPendingEnableUartTerminal);
     const [isFreezeCommandInFlight, setIsFreezeCommandInFlight] = useState(false);
+    const [uartCommandText, setUartCommandText] = useState('');
+    const [isUartSendInFlight, setIsUartSendInFlight] = useState(false);
+    const uartInputRef = useRef<HTMLInputElement>(null);
 
     const setFileSize = useCallback(
         (value: number) => {
@@ -109,6 +112,28 @@ export default () => {
             setIsFreezeCommandInFlight(false);
         }
     }, [dispatch, isFreezeCommandInFlight, isPhyFrozen, rssiDevice]);
+
+    const onSendUartCommand = useCallback(async () => {
+        if (!rssiDevice || isUartSendInFlight || !uartCommandText.trim()) return;
+
+        setIsUartSendInFlight(true);
+        try {
+            await rssiDevice.sendUartCommand(uartCommandText);
+            setUartCommandText('');
+        } finally {
+            setIsUartSendInFlight(false);
+        }
+    }, [rssiDevice, isUartSendInFlight, uartCommandText]);
+
+    const onUartInputKeyDown = useCallback(
+        (e: React.KeyboardEvent<HTMLInputElement>) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                onSendUartCommand();
+            }
+        },
+        [onSendUartCommand],
+    );
 
     return (
         <>
@@ -175,6 +200,43 @@ export default () => {
                     {isPhyFrozen ? 'Unfreeze PHY' : 'Freeze PHY'}
                 </Button>
             </div>
+            {isConnected && (
+                <div className="tw-mt-3">
+                    <label
+                        htmlFor="uart-command-input"
+                        style={{
+                            display: 'block',
+                            fontSize: 12,
+                            fontWeight: 500,
+                            marginBottom: 6,
+                            color: '#333',
+                        }}
+                    >
+                        Manual UART Command
+                    </label>
+                    <input
+                        ref={uartInputRef}
+                        id="uart-command-input"
+                        type="text"
+                        placeholder="Enter command and press Enter..."
+                        value={uartCommandText}
+                        onChange={(e) => setUartCommandText(e.target.value)}
+                        onKeyDown={onUartInputKeyDown}
+                        disabled={isUartSendInFlight}
+                        style={{
+                            width: '100%',
+                            padding: '8px 10px',
+                            fontSize: 13,
+                            border: '1px solid #ccc',
+                            borderRadius: 4,
+                            fontFamily: 'monospace',
+                            boxSizing: 'border-box',
+                            opacity: isUartSendInFlight ? 0.6 : 1,
+                            cursor: isUartSendInFlight ? 'not-allowed' : 'text',
+                        }}
+                    />
+                </div>
+            )}
         </>
     );
 };
