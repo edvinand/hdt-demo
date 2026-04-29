@@ -6,10 +6,7 @@
 
 import React from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import {
-    Card,
-    StateSelector,
-} from '@nordicsemiconductor/pc-nrfconnect-shared';
+import { StateSelector } from '@nordicsemiconductor/pc-nrfconnect-shared';
 
 import {
     getDisplayType,
@@ -25,11 +22,15 @@ const DisplayTypeSelector = () => {
     const selectedItem = displayType === 'gauge' ? 'Gauge' : 'Bars';
 
     return (
-        <Card title="Display">
-            <div className="tw-flex tw-items-center tw-justify-between">
+        <div className="tw-flex tw-items-center tw-justify-between tw-gap-3 tw-px-1">
+            <span className="tw-text-xs tw-font-medium tw-uppercase tw-tracking-wide tw-text-gray-600">
+                Display
+            </span>
+            <div className="tw-w-32">
                 <StateSelector
                     items={[...DISPLAY_OPTIONS]}
                     selectedItem={selectedItem}
+                    size="sm"
                     onSelect={selectedIndex => {
                         dispatch(
                             setDisplayType(
@@ -39,7 +40,7 @@ const DisplayTypeSelector = () => {
                     }}
                 />
             </div>
-        </Card>
+        </div>
     );
 };
 

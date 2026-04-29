@@ -8,7 +8,7 @@ import React from 'react';
 import { Group, SidePanel } from '@nordicsemiconductor/pc-nrfconnect-shared';
 
 import useThroughputDevice from '../../features/throughputDevice/useThroughputDevice';
-import ControlButtons from './ControlButtons';
+import ControlButtons, { WriteConfigButton } from './ControlButtons';
 import Delay from './Delay';
 import DisplayTypeSelector from './DisplayTypeSelector';
 import ToggleLed from './ToggleLed';
@@ -40,6 +40,10 @@ export default () => {
             <Group heading="Advanced" collapsible defaultCollapsed>
                 <Advanced />
             </Group>
+
+            <div className="tw-pt-1">
+                <WriteConfigButton />
+            </div>
         </SidePanel>
     );
 };

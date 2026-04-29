@@ -41,6 +41,12 @@ interface RssiState {
     fileTransferResetTrigger: number;
     serialPort?: SerialPort<AutoDetectTypes>;
     rssiDevice?: RssiDevice;
+    didRunProgrammingInCurrentSetup: boolean;
+    showCompanionProgrammingPrompt: boolean;
+    mainProgrammedSerial?: string;
+    companionTargetSerial?: string;
+    companionProgrammingError?: string;
+    lastFlashedCompanionSerial?: string;
 }
 
 const initialState: RssiState = {
@@ -61,14 +67,17 @@ const initialState: RssiState = {
     pendingEnableProgressBars: true,
     isPhyFrozen: false,
     noDataReceived: false,
-    phyEnabled: [true, true, true, true, true, true, true],
-    appliedPhyEnabled: [true, true, true, true, true, true, true],
+    phyEnabled: [false, false, false, false, false, true, true],
+    appliedPhyEnabled: [false, false, false, false, false, true, true],
     phyThroughput: [0, 0, 0, 0, 0, 0, 0],
     phyUpdatedAt: [0, 0, 0, 0, 0, 0, 0],
     phyMaxThroughput: [0, 0, 0, 0, 0, 0, 0],
     displayType: 'bars',
     uartLog: [],
     fileTransferResetTrigger: 0,
+    didRunProgrammingInCurrentSetup: false,
+    showCompanionProgrammingPrompt: false,
+    companionTargetSerial: 'none',
 };
 
 const rssiSlice = createSlice({
@@ -261,6 +270,56 @@ const rssiSlice = createSlice({
             }
             state.noDataReceived = true;
         },
+
+        showCompanionProgrammingPrompt: (
+            state,
+            action: PayloadAction<{ mainSerial: string }>,
+        ) => {
+            state.showCompanionProgrammingPrompt = true;
+            state.mainProgrammedSerial = action.payload.mainSerial;
+        },
+
+        hideCompanionProgrammingPrompt: state => {
+            state.showCompanionProgrammingPrompt = false;
+            state.mainProgrammedSerial = undefined;
+            state.companionTargetSerial = 'none';
+            state.companionProgrammingError = undefined;
+        },
+
+        setCompanionTargetSerial: (state, action: PayloadAction<string>) => {
+            state.companionTargetSerial = action.payload;
+            state.companionProgrammingError = undefined;
+        },
+
+        setCompanionProgrammingError: (
+            state,
+            action: PayloadAction<string>,
+        ) => {
+            state.companionProgrammingError = action.payload;
+        },
+
+        setLastFlashedCompanionSerial: (
+            state,
+            action: PayloadAction<string>,
+        ) => {
+            state.lastFlashedCompanionSerial = action.payload;
+        },
+
+        markDeviceSetupAttemptStarted: state => {
+            state.didRunProgrammingInCurrentSetup = false;
+        },
+
+        clearDeviceSetupAttempt: state => {
+            state.didRunProgrammingInCurrentSetup = false;
+        },
+    },
+    extraReducers: builder => {
+        builder.addMatcher(
+            action => action.type === 'deviceSetup/setDeviceSetupProgress',
+            state => {
+                state.didRunProgrammingInCurrentSetup = true;
+            },
+        );
     },
 });
 
@@ -311,6 +370,18 @@ export const getPhyMaxThroughput = (state: RootState) =>
     state.app.rssi.phyMaxThroughput;
 export const getDisplayType = (state: RootState) => state.app.rssi.displayType;
 export const getUartLog = (state: RootState) => state.app.rssi.uartLog;
+export const getShowCompanionProgrammingPrompt = (state: RootState) =>
+    state.app.rssi.showCompanionProgrammingPrompt;
+export const getMainProgrammedSerial = (state: RootState) =>
+    state.app.rssi.mainProgrammedSerial;
+export const getCompanionTargetSerial = (state: RootState) =>
+    state.app.rssi.companionTargetSerial;
+export const getCompanionProgrammingError = (state: RootState) =>
+    state.app.rssi.companionProgrammingError;
+export const getLastFlashedCompanionSerial = (state: RootState) =>
+    state.app.rssi.lastFlashedCompanionSerial;
+export const getDidRunProgrammingInCurrentSetup = (state: RootState) =>
+    state.app.rssi.didRunProgrammingInCurrentSetup;
 
 export const {
     setSerialPort,
@@ -340,5 +411,12 @@ export const {
     logUart,
     onReceiveRssiData,
     onReceiveNoRssiData,
+    showCompanionProgrammingPrompt,
+    hideCompanionProgrammingPrompt,
+    setCompanionTargetSerial,
+    setCompanionProgrammingError,
+    setLastFlashedCompanionSerial,
+    markDeviceSetupAttemptStarted,
+    clearDeviceSetupAttempt,
 } = rssiSlice.actions;
 export default rssiSlice.reducer;

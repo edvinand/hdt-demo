@@ -30,6 +30,33 @@ import {
 } from '../../features/throughputDevice/throughputDeviceSlice';
 
 export default () => {
+    const dispatch = useDispatch();
+
+    const loadDefaults = useCallback(() => {
+        dispatch(loadDefaultConfig());
+    }, [dispatch]);
+
+    useHotKey({
+        hotKey: 'alt+d',
+        title: 'Load default config',
+        isGlobal: false,
+        action: () => loadDefaults(),
+    });
+
+    return (
+        <>
+            <Button
+                variant="secondary"
+                className="w-100"
+                onClick={loadDefaults}
+            >
+                Load default config
+            </Button>
+        </>
+    );
+};
+
+export const WriteConfigButton = () => {
     const isConnected = useSelector(getIsConnected);
     const delay = useSelector(getDelay);
     const phyEnabled = useSelector(getPhyEnabled);
@@ -47,7 +74,6 @@ export default () => {
     const writeConfig = useCallback(() => {
         if (!isConnected) return;
 
-        // For PCA10056, force HDT PHY indices 0-4 to false; only LE 2M/LE 1M are supported.
         const effectivePhyEnabled = phyEnabled.map((v, i) =>
             isPca10056 && i < 5 ? false : v,
         );
@@ -76,10 +102,6 @@ export default () => {
         packetSizeBytes,
     ]);
 
-    const loadDefaults = useCallback(() => {
-        dispatch(loadDefaultConfig());
-    }, [dispatch]);
-
     useHotKey({
         hotKey: 'alt+w',
         title: 'Write config',
@@ -87,31 +109,14 @@ export default () => {
         action: () => writeConfig(),
     });
 
-    useHotKey({
-        hotKey: 'alt+d',
-        title: 'Load default config',
-        isGlobal: false,
-        action: () => loadDefaults(),
-    });
-
     return (
-        <>
-            <Button
-                variant="primary"
-                className="w-100 tw-mb-2"
-                disabled={!isConnected}
-                onClick={writeConfig}
-            >
-                Write config
-            </Button>
-
-            <Button
-                variant="secondary"
-                className="w-100"
-                onClick={loadDefaults}
-            >
-                Load default config
-            </Button>
-        </>
+        <Button
+            variant="primary"
+            className="w-100"
+            disabled={!isConnected}
+            onClick={writeConfig}
+        >
+            Write config
+        </Button>
     );
 };

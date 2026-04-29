@@ -7,7 +7,6 @@
 import React from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
-    Card,
     selectedDevice,
     StateSelector,
 } from '@nordicsemiconductor/pc-nrfconnect-shared';
@@ -27,27 +26,30 @@ const ConfigPhySelector = () => {
     const isPca10056 = boardVersion === 'PCA10056';
 
     return (
-        <Card title="PHY configuration">
-            <div className="tw-flex tw-flex-col tw-gap-2">
-                {PHY_LABELS.map((label, index) => {
-                    const unsupported = isPca10056 && index < 5;
-                    const enabled = phyEnabled[index];
-                    const selectedItem =
-                        unsupported ? 'Off' : enabled ? 'On' : 'Off';
+        <div className="tw-flex tw-flex-col tw-gap-2 tw-px-1">
+            <span className="tw-text-xs tw-font-medium tw-uppercase tw-tracking-wide tw-text-gray-600">
+                PHY configuration
+            </span>
+            {PHY_LABELS.map((label, index) => {
+                const unsupported = isPca10056 && index < 5;
+                const enabled = phyEnabled[index];
+                const selectedItem = unsupported ? 'Off' : enabled ? 'On' : 'Off';
 
-                    return (
-                        <div
-                            key={label}
-                            className={`tw-flex tw-items-center tw-justify-between${
-                                unsupported ? ' tw-opacity-50' : ''
-                            }`}
-                        >
-                            <span className="tw-inline-block tw-w-24 tw-whitespace-nowrap">
-                                {label}
-                            </span>
+                return (
+                    <div
+                        key={label}
+                        className={`tw-flex tw-items-center tw-justify-between${
+                            unsupported ? ' tw-opacity-50' : ''
+                        }`}
+                    >
+                        <span className="tw-inline-block tw-w-24 tw-whitespace-nowrap">
+                            {label}
+                        </span>
+                        <div className="tw-w-24">
                             <StateSelector
                                 items={['Off', 'On']}
                                 selectedItem={selectedItem}
+                                size="sm"
                                 disabled={unsupported}
                                 onSelect={selectedIndex => {
                                     if (unsupported) return;
@@ -61,10 +63,10 @@ const ConfigPhySelector = () => {
                                 }}
                             />
                         </div>
-                    );
-                })}
-            </div>
-        </Card>
+                    </div>
+                );
+            })}
+        </div>
     );
 };
 

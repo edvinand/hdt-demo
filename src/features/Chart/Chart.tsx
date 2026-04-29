@@ -9,6 +9,8 @@ import { Bar, Line } from 'react-chartjs-2';
 import { useDispatch, useSelector } from 'react-redux';
 import {
     Alert,
+    ConfirmationDialog,
+    getDevices,
     getReadbackProtection,
     Main,
     selectedDevice,
@@ -24,7 +26,7 @@ import {
 } from 'chart.js';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
 
-import { recoverHex } from '../throughputDevice/throughputDeviceEffects';
+import { recoverHex, confirmCompanionProgramming, cancelCompanionProgramming } from '../throughputDevice/throughputDeviceEffects';
 import {
     getNoDataReceived,
     getAppliedPhyEnabled,
@@ -37,6 +39,11 @@ import {
     getEnableProgressBars,
     getEnableUartTerminal,
     getDisplayType,
+    getShowCompanionProgrammingPrompt,
+    getCompanionTargetSerial,
+    getCompanionProgrammingError,
+    getMainProgrammedSerial,
+    setCompanionTargetSerial,
 } from '../throughputDevice/throughputDeviceSlice';
 import UartTerminal from '../throughputDevice/UartTerminal';
 import { PHY_LABELS } from '../throughputDevice/phyLabels';
@@ -311,6 +318,13 @@ export default () => {
     const device = useSelector(selectedDevice);
     const readbackProtection = useSelector(getReadbackProtection);
     const noData = useSelector(getNoDataReceived);
+    const showCompanionPrompt = useSelector(getShowCompanionProgrammingPrompt);
+    const companionTargetSerial = useSelector(getCompanionTargetSerial);
+    const companionProgrammingError = useSelector(
+        getCompanionProgrammingError,
+    );
+    const mainProgrammedSerial = useSelector(getMainProgrammedSerial);
+    const connectedDevices = useSelector(getDevices);
     const dispatch = useDispatch();
 
     const activeThroughput = phyThroughput;
@@ -346,6 +360,9 @@ export default () => {
     >([]);
     const [singlePhyHistoryArmed, setSinglePhyHistoryArmed] =
         useState(false);
+    const [showStartupDialog, setShowStartupDialog] = useState(
+        () => localStorage.getItem('hdt-demo.startup-dialog-dismissed') !== 'true',
+    );
     const lastTickRef = useRef(now);
     const lastSampledUpdatedAtRef = useRef(0);
     const lastSinglePhyProgressRef = useRef<number | null>(null);
@@ -543,6 +560,24 @@ export default () => {
             })),
         [singlePhyHistory],
     );
+
+    // Compute eligible companion devices for the prompt
+    const eligibleCompanionDevices = useMemo(() => {
+        if (!mainProgrammedSerial) return [];
+        return connectedDevices
+            .filter(d => {
+                const board = d.devkit?.boardVersion?.toUpperCase();
+                return (
+                    (board === 'PCA10156' || board === 'PCA10056') &&
+                    d.serialNumber &&
+                    d.serialNumber !== mainProgrammedSerial
+                );
+            })
+            .map(d => ({
+                serialNumber: d.serialNumber!,
+                boardVersion: d.devkit?.boardVersion ?? 'Device',
+            }));
+    }, [mainProgrammedSerial, connectedDevices]);
 
     const currentSinglePhyThroughput =
         singleActivePhyIndex >= 0 ? activeThroughput[singleActivePhyIndex] ?? 0 : 0;
@@ -893,6 +928,87 @@ export default () => {
                 </Main>
                 {enableUartTerminal && <UartTerminal />}
             </div>
+            <ConfirmationDialog
+                isVisible={showStartupDialog}
+                title="Test title"
+                confirmLabel="Ok"
+                onConfirm={() => setShowStartupDialog(false)}
+                optionalLabel="Don't show again"
+                onOptional={() => {
+                    localStorage.setItem('hdt-demo.startup-dialog-dismissed', 'true');
+                    setShowStartupDialog(false);
+                }}
+            >
+                Test body
+                // Change the test body look here edit this and remove this comment.
+            </ConfirmationDialog>
+            {showCompanionPrompt && (
+                <ConfirmationDialog
+                    isVisible={showCompanionPrompt}
+                    title="Program Companion Device"
+                    onConfirm={() => dispatch(confirmCompanionProgramming())}
+                    onCancel={() => dispatch(cancelCompanionProgramming())}
+                >
+                    <div style={{ minWidth: '400px', maxWidth: '600px' }}>
+                        {companionProgrammingError && (
+                            <div
+                                style={{
+                                    marginBottom: '12px',
+                                    padding: '8px 12px',
+                                    backgroundColor: '#fee',
+                                    borderLeft: '3px solid #c33',
+                                    borderRadius: '4px',
+                                    color: '#c33',
+                                    fontSize: '14px',
+                                }}
+                            >
+                                {companionProgrammingError}
+                            </div>
+                        )}
+                        <label
+                            style={{
+                                display: 'block',
+                                marginBottom: '12px',
+                                fontSize: '14px',
+                                fontWeight: 500,
+                            }}
+                        >
+                            Select companion device:
+                        </label>
+                        <select
+                            value={companionTargetSerial ?? 'none'}
+                            onChange={e =>
+                                dispatch(setCompanionTargetSerial(e.target.value))
+                            }
+                            style={{
+                                display: 'block',
+                                width: '100%',
+                                padding: '8px',
+                                borderRadius: '4px',
+                                border: '1px solid #ccc',
+                                fontSize: '14px',
+                                cursor: 'pointer',
+                                marginBottom: '12px',
+                            }}
+                        >
+                            <option value="none">No companion device</option>
+                            {eligibleCompanionDevices.map(device => (
+                                <option
+                                    key={device.serialNumber}
+                                    value={device.serialNumber}
+                                >
+                                    {device.boardVersion} ({device.serialNumber})
+                                </option>
+                            ))}
+                        </select>
+                        <p style={{ fontSize: '13px', color: '#666', margin: 0 }}>
+                            If you select a device above and click Program, the same
+                            firmware as the main device will be flashed to it. Select
+                            "No companion device" to skip this step.
+                        </p>
+                    </div>
+                </ConfirmationDialog>
+            )}
         </div>
     );
 };

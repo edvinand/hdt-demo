@@ -162,7 +162,7 @@ export default () => {
                 value={packetSizeBytes}
                 onChange={setPacketSize}
                 label="Packet size"
-                unit="B"
+                unit="Byte"
             />
             <div className="tw-mt-2">
                 <Toggle
