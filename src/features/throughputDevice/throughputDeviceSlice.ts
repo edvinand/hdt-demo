@@ -12,6 +12,10 @@ import type { RootState } from '../../app/store';
 import { RssiDevice } from './createThroughputDevice';
 
 const initialData = () => new Array(81).fill(undefined).map(() => []);
+const STARTUP_DIALOG_DISMISSED_KEY = 'hdt-demo.startup-dialog-dismissed';
+const getInitialShowStartupDialog = () =>
+    typeof localStorage === 'undefined' ||
+    localStorage.getItem(STARTUP_DIALOG_DISMISSED_KEY) !== 'true';
 
 interface RssiState {
     isPaused: boolean;
@@ -47,6 +51,7 @@ interface RssiState {
     companionTargetSerial?: string;
     companionProgrammingError?: string;
     lastFlashedCompanionSerial?: string;
+    showStartupDialog: boolean;
 }
 
 const initialState: RssiState = {
@@ -78,6 +83,7 @@ const initialState: RssiState = {
     didRunProgrammingInCurrentSetup: false,
     showCompanionProgrammingPrompt: false,
     companionTargetSerial: 'none',
+    showStartupDialog: getInitialShowStartupDialog(),
 };
 
 const rssiSlice = createSlice({
@@ -312,6 +318,14 @@ const rssiSlice = createSlice({
         clearDeviceSetupAttempt: state => {
             state.didRunProgrammingInCurrentSetup = false;
         },
+
+        showStartupDialog: state => {
+            state.showStartupDialog = true;
+        },
+
+        hideStartupDialog: state => {
+            state.showStartupDialog = false;
+        },
     },
     extraReducers: builder => {
         builder.addMatcher(
@@ -372,6 +386,8 @@ export const getDisplayType = (state: RootState) => state.app.rssi.displayType;
 export const getUartLog = (state: RootState) => state.app.rssi.uartLog;
 export const getShowCompanionProgrammingPrompt = (state: RootState) =>
     state.app.rssi.showCompanionProgrammingPrompt;
+export const getShowStartupDialog = (state: RootState) =>
+    state.app.rssi.showStartupDialog;
 export const getMainProgrammedSerial = (state: RootState) =>
     state.app.rssi.mainProgrammedSerial;
 export const getCompanionTargetSerial = (state: RootState) =>
@@ -418,5 +434,7 @@ export const {
     setLastFlashedCompanionSerial,
     markDeviceSetupAttemptStarted,
     clearDeviceSetupAttempt,
+    showStartupDialog,
+    hideStartupDialog,
 } = rssiSlice.actions;
 export default rssiSlice.reducer;

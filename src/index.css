@@ -17,3 +17,18 @@ body,
 * {
     font-family: inherit;
 }
+
+.hdt-side-panel-root {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.hdt-side-panel-layout {
+    flex: 1 0 auto;
+    min-height: calc(100% - 64px);
+}
+
+.hdt-side-panel-help {
+    padding-bottom: 32px;
+}

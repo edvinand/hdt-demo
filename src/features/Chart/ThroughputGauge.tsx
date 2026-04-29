@@ -79,24 +79,49 @@ const ThroughputGauge = ({
     const currentEndDeg =
         ARC_START_DEG + ARC_SWEEP_DEG * currentFraction;
 
-    // Max tick angle
-    const maxTickDeg = ARC_START_DEG + ARC_SWEEP_DEG * maxFraction;
+    // Background arc scaled to individual PHY capacity.
+    // When possible, split it into two segments with a tiny gap after the
+    // max-recorded throughput position instead of drawing a black tick.
+    // The gap starts where the blue arc's rounded linecap visually ends
+    // when current throughput reaches that recorded max.
+    const maxIndicatorDeg = ARC_START_DEG + ARC_SWEEP_DEG * maxFraction;
+    const lineCapDeg = (strokeWidth / (2 * r)) * (180 / Math.PI);
+    const visibleGapDeg = size === 'large' ? 2.4 : 2.0;
+    const leadingArcEndDeg = maxIndicatorDeg;
+    const trailingArcStartDeg =
+        maxIndicatorDeg + visibleGapDeg + 2 * lineCapDeg;
+    const canShowMaxGap =
+        maxRecordedKbps > 0 &&
+        leadingArcEndDeg > ARC_START_DEG + lineCapDeg &&
+        trailingArcStartDeg < capacityEndDeg - lineCapDeg;
 
-    // Background arc scaled to individual PHY capacity
-    const bgArcPath = describeArc(cx, cy, r, ARC_START_DEG, capacityEndDeg);
+    const bgArcPathLeading = canShowMaxGap
+        ? describeArc(
+              cx,
+              cy,
+              r,
+              ARC_START_DEG,
+              leadingArcEndDeg,
+          )
+        : '';
+    const bgArcPathTrailing = canShowMaxGap
+        ? describeArc(
+              cx,
+              cy,
+              r,
+              trailingArcStartDeg,
+              capacityEndDeg,
+          )
+        : '';
+    const bgArcPath = canShowMaxGap
+        ? ''
+        : describeArc(cx, cy, r, ARC_START_DEG, capacityEndDeg);
 
     // Filled arc for current value (avoid zero-length arc)
     const fillArcPath =
         currentFraction > 0.001
             ? describeArc(cx, cy, r, ARC_START_DEG, currentEndDeg)
             : '';
-
-    // Max-value tick mark — radial line offset forward by strokeWidth
-    // so it appears at the visual end of the arc stroke, not cutting through it
-    const strokeOffsetDeg = (strokeWidth / r) * (180 / Math.PI)/2;
-    const adjustedTickDeg = maxTickDeg + strokeOffsetDeg;
-    const tickInner = polarToCartesian(cx, cy, r - strokeWidth / 2 - 4, adjustedTickDeg);
-    const tickOuter = polarToCartesian(cx, cy, r + strokeWidth / 2 + 4, adjustedTickDeg);
 
     const fillColor = isHighlighted ? color.bar.highlight : color.bar.normal;
     const labelFontSize = size === 'large' ? 18 : 14;
@@ -126,13 +151,33 @@ const ThroughputGauge = ({
                 }}
             >
                 {/* Background arc */}
-                <path
-                    d={bgArcPath}
-                    fill="none"
-                    stroke={color.bar.background}
-                    strokeWidth={strokeWidth}
-                    strokeLinecap="round"
-                />
+                {bgArcPath && (
+                    <path
+                        d={bgArcPath}
+                        fill="none"
+                        stroke={color.bar.background}
+                        strokeWidth={strokeWidth}
+                        strokeLinecap="round"
+                    />
+                )}
+                {bgArcPathLeading && (
+                    <path
+                        d={bgArcPathLeading}
+                        fill="none"
+                        stroke={color.bar.background}
+                        strokeWidth={strokeWidth}
+                        strokeLinecap="round"
+                    />
+                )}
+                {bgArcPathTrailing && (
+                    <path
+                        d={bgArcPathTrailing}
+                        fill="none"
+                        stroke={color.bar.background}
+                        strokeWidth={strokeWidth}
+                        strokeLinecap="round"
+                    />
+                )}
 
                 {/* Filled arc for current throughput */}
                 {fillArcPath && (
@@ -145,19 +190,6 @@ const ThroughputGauge = ({
                         style={{
                             transition: 'stroke-dashoffset 0.5s ease',
                         }}
-                    />
-                )}
-
-                {/* Black tick at max recorded value */}
-                {maxRecordedKbps > 0 && (
-                    <line
-                        x1={tickInner.x}
-                        y1={tickInner.y}
-                        x2={tickOuter.x}
-                        y2={tickOuter.y}
-                        stroke="#000000"
-                        strokeWidth={2.5}
-                        strokeLinecap="round"
                     />
                 )}
 

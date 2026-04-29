@@ -43,6 +43,8 @@ import {
     getCompanionTargetSerial,
     getCompanionProgrammingError,
     getMainProgrammedSerial,
+    getShowStartupDialog,
+    hideStartupDialog,
     setCompanionTargetSerial,
 } from '../throughputDevice/throughputDeviceSlice';
 import UartTerminal from '../throughputDevice/UartTerminal';
@@ -55,6 +57,7 @@ import './alert.scss';
 // Per-PHY theoretical maximum kbps (index matches PHY_LABELS and appliedPhyEnabled)
 const PHY_MAX_KBPS = [7500, 6000, 4000, 3000, 2000, 2000, 1000];
 const ROBOTO_FONT_FAMILY = 'Roboto, "Segoe UI", sans-serif';
+const STARTUP_DIALOG_DISMISSED_KEY = 'hdt-demo.startup-dialog-dismissed';
 
 const throughputLabelPlugin = {
     id: 'throughputLabelPlugin',
@@ -118,109 +121,28 @@ const throughputLabelPlugin = {
             const yBottom = (bar.y as number) + halfHeight;
             const barHeight = Math.max(1, bar.height as number);
 
+            // Skip bars that are entirely outside the chart area
+            if (yBottom < chartArea.top || (bar.y as number) - halfHeight > chartArea.bottom) {
+                return;
+            }
+
             let fontSizeLabel = Math.max(10, Math.floor(barHeight * 0.55));
             if (phyCount <= 5) {
                 fontSizeLabel = Math.max(fontSizeLabel, 18);
             }
-
-            const paddingX = Math.max(6, Math.round(fontSizeLabel * 0.35));
-            const paddingY = Math.max(3, Math.round(fontSizeLabel * 0.2));
-            const radius = Math.max(4, Math.round(fontSizeLabel * 0.3));
-
-            // Draw 0-100% progress bar below the throughput bar.
-            // Scale gap and track height to the available slot so every
-            // row is treated equally (no special squishing of the last bar).
-            const spaceBelow = slotHeight / 2 - halfHeight;
-            const trackGap = Math.max(2, Math.round(spaceBelow * 0.15));
-            const trackHeight = Math.min(
-                barHeight*0.5,
-                Math.max(10, Math.round(spaceBelow * 0.55)),
-            );
-            const trackY = yBottom + trackGap +3;
-
-            if (
-                showProgressBars &&
-                trackY + trackHeight >= chartArea.top &&
-                trackWidth > 0
-            ) {
-                ctx.save();
-                // Grey track and blue fill for file-transfer progress
-                ctx.fillStyle = color.bar.background; // grey track
-                ctx.fillRect(xLeft, trackY-1, trackWidth, trackHeight);
-                ctx.fillStyle = color.bar.normal; // blue fill
-                const clampedPercent = Math.max(0, Math.min(100, percent));
-                ctx.fillRect(
-                    xLeft,
-                    trackY,
-                    (trackWidth * clampedPercent) / 100,
-                    trackHeight,
-                );
-
-                // Percentage label + timer in the bottom-left corner of the bar
-                const totalSeconds = Math.floor(elapsedMs / 1000);
-                const minutes = Math.floor(totalSeconds / 60);
-                const seconds = totalSeconds % 60;
-                const timeLabel = `${String(minutes).padStart(2, '0')}:${String(
-                    seconds,
-                ).padStart(2, '0')}`;
-
-                // Timestamp for right side (best/fastest completion time)
-                const bestCompletedMs = (fileTransferDataset as any)?.bestCompletedMs?.[index] ?? 0;
-                const bestTotalSeconds = Math.floor(bestCompletedMs / 1000);
-                const bestMinutes = Math.floor(bestTotalSeconds / 60);
-                const bestSeconds = bestTotalSeconds % 60;
-                const bestTimeLabel = `${String(bestMinutes).padStart(2, '0')}:${String(
-                    bestSeconds,
-                ).padStart(2, '0')}`;
-
-                const trackFontSize = Math.max(8, Math.min(16, trackHeight - 4));
-                ctx.fillStyle = color.label;
-                ctx.font =
-                    `${trackFontSize}px ${ROBOTO_FONT_FAMILY}`;
-                ctx.textAlign = 'left';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(
-                    `${Math.round(
-                        clampedPercent,
-                    )}% of ${fileSizeMb}MB (${timeLabel})`,
-                    xLeft + 4,
-                    trackY + trackHeight / 2,
-                );
-
-                // Timestamp label on the right side of the bar (best completion time so far)
-                ctx.textAlign = 'right';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(
-                    `(${bestTimeLabel})`,
-                    xLeft + trackWidth - 4,
-                    trackY + trackHeight / 2,
-                );
-                ctx.restore();
-            }
-
-            const textX = xLeft + 10;
-            const textY = (bar.y as number) + 3; // +3 to nudge it down to the center line.
-
-            if (
-                textY - halfHeight < chartArea.top ||
-                textY + halfHeight > chartArea.bottom
-            ) {
-                return;
-            }
+            fontSizeLabel = Math.min(fontSizeLabel, 20);
+            const throughputFontSize = Math.min(22, fontSizeLabel + 2);
+            const progressFontSize = Math.max(10, fontSizeLabel - 2);
 
             const rawValue = throughputData[index];
             const safeValue =
-                rawValue === undefined ||
-                rawValue === null ||
-                Number.isNaN(rawValue)
+                rawValue === undefined || rawValue === null || Number.isNaN(rawValue)
                     ? 0
                     : rawValue;
 
             const rawMax = maxData[index];
             const safeMax =
-                rawMax === undefined ||
-                rawMax === null ||
-                Number.isNaN(rawMax)
+                rawMax === undefined || rawMax === null || Number.isNaN(rawMax)
                     ? 0
                     : rawMax;
 
@@ -237,17 +159,83 @@ const throughputLabelPlugin = {
                 ctx.restore();
             }
 
-            // "lastValue / maxValue kbps" text inside the bar
+            // Resolve this bar's fill color so the label matches the bar
+            const barColors = chart.data.datasets[throughputIndex].backgroundColor as string[] | string;
+            const barFillColor = Array.isArray(barColors)
+                ? (barColors[index] ?? color.bar.normal)
+                : (barColors ?? color.bar.normal);
+
+            const labelGap = 5; // px between bar bottom and label, and between progress bar and label
+
+            // Throughput label below the throughput bar
+            const throughputTextY = yBottom + labelGap;
             const label = `${safeValue} / ${safeMax} kbps`;
 
             ctx.save();
-            ctx.font =
-                `bold ${fontSizeLabel}px ${ROBOTO_FONT_FAMILY}`;
-            ctx.fillStyle = color.bar.badgeText;
+            ctx.font = `bold ${throughputFontSize}px ${ROBOTO_FONT_FAMILY}`;
+            ctx.fillStyle = barFillColor;
             ctx.textAlign = 'left';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(label, textX, textY);
+            ctx.textBaseline = 'top';
+            ctx.fillText(label, xLeft + 10, throughputTextY);
             ctx.restore();
+
+            // Progress bar positioned below the throughput label
+            const spaceBelow = slotHeight / 2 - halfHeight;
+            const trackHeight = Math.min(
+                barHeight * 0.35,
+                Math.max(8, Math.round(spaceBelow * 0.3)),
+            );
+            const trackY = throughputTextY + throughputFontSize + labelGap;
+
+            if (
+                showProgressBars &&
+                trackY + trackHeight >= chartArea.top &&
+                trackWidth > 0
+            ) {
+                ctx.save();
+                ctx.fillStyle = color.bar.background;
+                ctx.fillRect(xLeft, trackY, trackWidth, trackHeight);
+                ctx.fillStyle = color.bar.normal;
+                const clampedPercent = Math.max(0, Math.min(100, percent));
+                ctx.fillRect(
+                    xLeft,
+                    trackY,
+                    (trackWidth * clampedPercent) / 100,
+                    trackHeight,
+                );
+                ctx.restore();
+
+                // Progress labels below the progress bar
+                const totalSeconds = Math.floor(elapsedMs / 1000);
+                const minutes = Math.floor(totalSeconds / 60);
+                const seconds = totalSeconds % 60;
+                const timeLabel = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+                const bestCompletedMs = (fileTransferDataset as any)?.bestCompletedMs?.[index] ?? 0;
+                const bestTotalSeconds = Math.floor(bestCompletedMs / 1000);
+                const bestMinutes = Math.floor(bestTotalSeconds / 60);
+                const bestSeconds = bestTotalSeconds % 60;
+                const bestTimeLabel = `${String(bestMinutes).padStart(2, '0')}:${String(bestSeconds).padStart(2, '0')}`;
+
+                const progressTextY = trackY + trackHeight + labelGap;
+                ctx.save();
+                ctx.font = `${progressFontSize}px ${ROBOTO_FONT_FAMILY}`;
+                ctx.fillStyle = color.bar.normal;
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'top';
+                ctx.fillText(
+                    `${Math.round(clampedPercent)}% of ${fileSizeMb}MB (${timeLabel})`,
+                    xLeft + 10,
+                    progressTextY,
+                );
+                ctx.textAlign = 'right';
+                ctx.fillText(
+                    `Best: ${bestTimeLabel}`,
+                    xLeft + trackWidth - 10,
+                    progressTextY,
+                );
+                ctx.restore();
+            }
         });
     },
 };
@@ -360,9 +348,7 @@ export default () => {
     >([]);
     const [singlePhyHistoryArmed, setSinglePhyHistoryArmed] =
         useState(false);
-    const [showStartupDialog, setShowStartupDialog] = useState(
-        () => localStorage.getItem('hdt-demo.startup-dialog-dismissed') !== 'true',
-    );
+    const showStartupDialog = useSelector(getShowStartupDialog);
     const lastTickRef = useRef(now);
     const lastSampledUpdatedAtRef = useRef(0);
     const lastSinglePhyProgressRef = useRef<number | null>(null);
@@ -930,17 +916,167 @@ export default () => {
             </div>
             <ConfirmationDialog
                 isVisible={showStartupDialog}
-                title="Test title"
+                title="Getting Started with HDT Demo"
                 confirmLabel="Ok"
-                onConfirm={() => setShowStartupDialog(false)}
+                onConfirm={() => dispatch(hideStartupDialog())}
                 optionalLabel="Don't show again"
                 onOptional={() => {
-                    localStorage.setItem('hdt-demo.startup-dialog-dismissed', 'true');
-                    setShowStartupDialog(false);
+                    localStorage.setItem(STARTUP_DIALOG_DISMISSED_KEY, 'true');
+                    dispatch(hideStartupDialog());
                 }}
             >
-                Test body
-                // Change the test body look here edit this and remove this comment.
+                <div style={{ maxWidth: 520, fontSize: 13, lineHeight: 1.6 }}>
+                    <section style={{ marginBottom: 16 }}>
+                        <strong style={{ fontSize: 14 }}>Hardware Requirements</strong>
+                        <p style={{ margin: '6px 0 0' }}>
+                            You need two Nordic development kits:
+                        </p>
+                        <ul style={{ margin: '6px 0 0', paddingLeft: 20 }}>
+                            <li>
+                                <strong>Primary device</strong> — DK connected to this
+                                PC (PCA10156/nRF54L15 DK for HDT PHYs, or PCA10056/nRF52840 DK for standard BLE)
+                            </li>
+                            <li>
+                                <strong>Companion device</strong> — a second DK running
+                                the companion firmware (central role)
+                            </li>
+                        </ul>
+                    </section>
+
+                    <section style={{ marginBottom: 16 }}>
+                        <strong style={{ fontSize: 14 }}>Getting Started</strong>
+                        <ol style={{ margin: '6px 0 0', paddingLeft: 20 }}>
+                            <li>
+                                Connect and select your primary device using the device
+                                selector at the top.
+                            </li>
+                            <li>
+                                The app programs compatible firmware automatically. If the kit is already programmed with the correct firmware, you can skip this.
+                            </li>
+                            <li>
+                                Select your desired PHYs and click{' '}
+                                <strong>Write config</strong> to apply settings to the
+                                device. (<strong>At evaluation state, only LE 1M and LE 2M are supported</strong>)
+                            </li>
+                            <li>
+                                Live throughput per PHY is shown in the main view.
+                            </li>
+                        </ol>
+                    </section>
+
+                    <section style={{ marginBottom: 16 }}>
+                        <strong style={{ fontSize: 14 }}>PHY Modes</strong>
+                        <table
+                            style={{
+                                marginTop: 6,
+                                width: '100%',
+                                borderCollapse: 'collapse',
+                                fontSize: 12,
+                            }}
+                        >
+                            <thead>
+                                <tr style={{ borderBottom: '1px solid #ccc' }}>
+                                    <th
+                                        style={{
+                                            textAlign: 'left',
+                                            padding: '3px 8px 3px 0',
+                                        }}
+                                    >
+                                        PHY
+                                    </th>
+                                    <th
+                                        style={{
+                                            textAlign: 'left',
+                                            padding: '3px 8px',
+                                        }}
+                                    >
+                                        Peak throughput
+                                    </th>
+                                    <th
+                                        style={{
+                                            textAlign: 'left',
+                                            padding: '3px 0',
+                                        }}
+                                    >
+                                        Requires
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {(
+                                    [
+                                        ['HDT7.5', '~7500 kbps', 'PCA10156'],
+                                        ['HDT6', '~6000 kbps', 'PCA10156'],
+                                        ['HDT4', '~4000 kbps', 'PCA10156'],
+                                        ['HDT3', '~3000 kbps', 'PCA10156'],
+                                        ['HDT2', '~2000 kbps', 'PCA10156'],
+                                        [
+                                            'LE 2M',
+                                            '~1300 kbps',
+                                            'PCA10156 / PCA10056',
+                                        ],
+                                        [
+                                            'LE 1M',
+                                            '~740 kbps',
+                                            'PCA10156 / PCA10056',
+                                        ],
+                                    ] as [string, string, string][]
+                                ).map(([phy, kbps, hw]) => (
+                                    <tr
+                                        key={phy}
+                                        style={{ borderBottom: '1px solid #eee' }}
+                                    >
+                                        <td
+                                            style={{
+                                                padding: '3px 8px 3px 0',
+                                                fontWeight: 500,
+                                            }}
+                                        >
+                                            {phy}
+                                        </td>
+                                        <td style={{ padding: '3px 8px' }}>
+                                            {kbps}
+                                        </td>
+                                        <td
+                                            style={{
+                                                padding: '3px 0',
+                                                color: '#555',
+                                            }}
+                                        >
+                                            {hw}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </section>
+
+                    <section>
+                        <strong style={{ fontSize: 14 }}>Tips</strong>
+                        <ul style={{ margin: '6px 0 0', paddingLeft: 20 }}>
+                            <li>
+                                Use <strong>Bars</strong> view for a side-by-side PHY
+                                comparison; use <strong>Gauge</strong> speedometer style readout.
+                            </li>
+                            <li>
+                                Enable <strong>Progress bars</strong> in Advanced to
+                                simulate a virtual file transfer.
+                            </li>
+                            <li>
+                                <strong>Write config</strong> applies your PHY selection
+                                and settings to the connected device.
+                            </li>
+                            <li>
+                                When only one PHY is enabled, you can see the throughput history over time in the single PHY graph. Use this to see how throughput evolves during a transfer, and how it is affected by distance, obstacles, etc.
+                            </li>
+                            <li>
+                                Reopen this dialog anytime via the{' '}
+                                <strong>Help</strong> button at the bottom of the side
+                                panel.
+                            </li>
+                        </ul>
+                    </section>
+                </div>
             </ConfirmationDialog>
             {showCompanionPrompt && (
                 <ConfirmationDialog
