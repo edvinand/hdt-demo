@@ -3,7 +3,10 @@
 ## Installation
 
 For testing purposes, drag the and drop the `hdt-demo-0.1.0.tgz` file into the
-nRF Connect for Desktop (NCD) Launcher. If you want to change something, you can
+nRF Connect for Desktop (NCD) Launcher. If you want to remove/uninstall it, remove the file from %USER%\.nrfconnect-apps\local.
+
+## Modification
+If you want to change something, you can
 save this repository to: %USER%\.nrfconnect-apps\local then run the command:
 `npm run watch` To use this command, please check the documentation:
 [Installing developments tools](https://nordicsemiconductor.github.io/pc-nrfconnect-docs/getting_started#installing-development-tools)
