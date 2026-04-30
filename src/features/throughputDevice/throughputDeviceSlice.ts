@@ -128,15 +128,20 @@ const rssiSlice = createSlice({
             state.delay = initialState.delay;
             state.phyEnabled = [...initialState.phyEnabled];
             state.virtualFileSizeMb = initialState.virtualFileSizeMb;
-            state.pendingVirtualFileSizeMb = initialState.pendingVirtualFileSizeMb;
-            state.connectionIntervalUnits = initialState.connectionIntervalUnits;
+            state.pendingVirtualFileSizeMb =
+                initialState.pendingVirtualFileSizeMb;
+            state.connectionIntervalUnits =
+                initialState.connectionIntervalUnits;
             state.packetSizeBytes = initialState.packetSizeBytes;
             state.enableGraphOnSinglePhy = initialState.enableGraphOnSinglePhy;
-            state.pendingEnableGraphOnSinglePhy = initialState.pendingEnableGraphOnSinglePhy;
+            state.pendingEnableGraphOnSinglePhy =
+                initialState.pendingEnableGraphOnSinglePhy;
             state.enableUartTerminal = initialState.enableUartTerminal;
-            state.pendingEnableUartTerminal = initialState.pendingEnableUartTerminal;
+            state.pendingEnableUartTerminal =
+                initialState.pendingEnableUartTerminal;
             state.enableProgressBars = initialState.enableProgressBars;
-            state.pendingEnableProgressBars = initialState.pendingEnableProgressBars;
+            state.pendingEnableProgressBars =
+                initialState.pendingEnableProgressBars;
         },
 
         applyCurrentPhyEnabled: state => {
@@ -168,10 +173,7 @@ const rssiSlice = createSlice({
             state.packetSizeBytes = action.payload;
         },
 
-        setEnableGraphOnSinglePhy: (
-            state,
-            action: PayloadAction<boolean>,
-        ) => {
+        setEnableGraphOnSinglePhy: (state, action: PayloadAction<boolean>) => {
             state.pendingEnableGraphOnSinglePhy = action.payload;
         },
 
@@ -214,10 +216,7 @@ const rssiSlice = createSlice({
             }
         },
 
-        setDisplayType: (
-            state,
-            action: PayloadAction<'bars' | 'gauge'>,
-        ) => {
+        setDisplayType: (state, action: PayloadAction<'bars' | 'gauge'>) => {
             state.displayType = action.payload;
         },
 
@@ -255,8 +254,11 @@ const rssiSlice = createSlice({
                 // Need at least PHY + 2 throughput bytes remaining
                 if (state.buffer.length < 3) break;
 
-                const [phy, throughputHi, throughputLo] =
-                    state.buffer.splice(0, 3);
+                const [phy, throughputHi, throughputLo] = state.buffer.splice(
+                    0,
+                    3,
+                );
+                // eslint-disable-next-line no-bitwise
                 const throughput = (throughputHi << 8) | throughputLo;
 
                 if (phy >= 0 && phy < state.phyThroughput.length) {

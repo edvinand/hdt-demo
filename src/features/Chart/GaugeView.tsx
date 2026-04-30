@@ -7,14 +7,14 @@
 import React from 'react';
 import { useSelector } from 'react-redux';
 
+import { PHY_LABELS } from '../throughputDevice/phyLabels';
 import {
     getAppliedPhyEnabled,
     getPhyMaxThroughput,
     getPhyThroughput,
     getPhyUpdatedAt,
 } from '../throughputDevice/throughputDeviceSlice';
-import { PHY_LABELS } from '../throughputDevice/phyLabels';
-import color from './rssiColors';
+import _color from './rssiColors';
 import ThroughputGauge from './ThroughputGauge';
 
 // Per-PHY theoretical maximum kbps (same as in Chart.tsx)
@@ -56,10 +56,7 @@ const GaugeView = ({ singlePhyTopContent }: GaugeViewProps) => {
     if (isSinglePhy && singlePhyTopContent) {
         const phyIdx = enabledIndices[0];
         return (
-            <div
-                className="d-flex flex-column h-100"
-                style={{ gap: 16 }}
-            >
+            <div className="d-flex flex-column h-100" style={{ gap: 16 }}>
                 <div style={{ flex: '0 0 45%', minHeight: 0 }}>
                     {singlePhyTopContent}
                 </div>
@@ -89,8 +86,14 @@ const GaugeView = ({ singlePhyTopContent }: GaugeViewProps) => {
     // Layout rules for multi-PHY gauge grid:
     // 2 → 1 row of 2, 3 → 2+1, 4 → 2×2, 5 → 3+2, 6 → 3+3, 7 → 4+3
     const count = enabledIndices.length;
-    const firstRowCount =
-        count <= 2 ? count : count <= 4 ? 2 : count <= 5 ? 3 : count <= 6 ? 3 : 4;
+    const getFirstRowCount = (c: number): number => {
+        if (c <= 2) return c;
+        if (c <= 4) return 2;
+        if (c <= 5) return 3;
+        if (c <= 6) return 3;
+        return 4;
+    };
+    const firstRowCount = getFirstRowCount(count);
 
     const firstRow = enabledIndices.slice(0, firstRowCount);
     const secondRow = enabledIndices.slice(firstRowCount);

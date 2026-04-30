@@ -20,37 +20,41 @@ import {
     CategoryScale,
     Chart,
     Filler,
-    LineElement,
     LinearScale,
+    LineElement,
     PointElement,
 } from 'chart.js';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
 
-import { recoverHex, confirmCompanionProgramming, cancelCompanionProgramming } from '../throughputDevice/throughputDeviceEffects';
+import { PHY_LABELS } from '../throughputDevice/phyLabels';
 import {
-    getNoDataReceived,
+    cancelCompanionProgramming,
+    confirmCompanionProgramming,
+    recoverHex,
+} from '../throughputDevice/throughputDeviceEffects';
+import {
     getAppliedPhyEnabled,
-    getPhyThroughput,
-    getPhyUpdatedAt,
-    getPhyMaxThroughput,
-    getVirtualFileSizeMb,
-    getFileTransferResetTrigger,
+    getCompanionProgrammingError,
+    getCompanionTargetSerial,
+    getDisplayType,
     getEnableGraphOnSinglePhy,
     getEnableProgressBars,
     getEnableUartTerminal,
-    getDisplayType,
-    getShowCompanionProgrammingPrompt,
-    getCompanionTargetSerial,
-    getCompanionProgrammingError,
+    getFileTransferResetTrigger,
     getMainProgrammedSerial,
+    getNoDataReceived,
+    getPhyMaxThroughput,
+    getPhyThroughput,
+    getPhyUpdatedAt,
+    getShowCompanionProgrammingPrompt,
     getShowStartupDialog,
+    getVirtualFileSizeMb,
     hideStartupDialog,
     setCompanionTargetSerial,
 } from '../throughputDevice/throughputDeviceSlice';
 import UartTerminal from '../throughputDevice/UartTerminal';
-import { PHY_LABELS } from '../throughputDevice/phyLabels';
-import color from './rssiColors';
 import GaugeView from './GaugeView';
+import color from './rssiColors';
 
 import './alert.scss';
 
@@ -61,17 +65,22 @@ const STARTUP_DIALOG_DISMISSED_KEY = 'hdt-demo.startup-dialog-dismissed';
 
 const throughputLabelPlugin = {
     id: 'throughputLabelPlugin',
-    afterDatasetsDraw(chart: any) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    afterDatasetsDraw(chart: Record<string, any>) {
         const throughputIndex = chart.data.datasets.findIndex(
-            (ds: any) => ds.label === 'Throughput',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (ds: Record<string, any>) => ds.label === 'Throughput',
         );
         if (throughputIndex < 0) return;
 
         const fileTransferIndex = chart.data.datasets.findIndex(
-            (ds: any) => ds.label === 'filetransfer',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (ds: Record<string, any>) => ds.label === 'filetransfer',
         );
+
         const maxIndex = chart.data.datasets.findIndex(
-            (ds: any) => ds.label === 'Max throughput',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (ds: Record<string, any>) => ds.label === 'Max throughput',
         );
 
         const { ctx, chartArea, scales } = chart;
@@ -82,23 +91,32 @@ const throughputLabelPlugin = {
         const throughputData: number[] =
             chart.data.datasets[throughputIndex].data ?? [];
 
-        const fileTransferDataset: any =
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const fileTransferDataset: Record<string, any> | undefined =
             fileTransferIndex >= 0
                 ? chart.data.datasets[fileTransferIndex]
                 : undefined;
-        const showProgressBars = fileTransferDataset?.showProgressBars !== false;
+        const showProgressBars =
+            fileTransferDataset?.showProgressBars !== false;
         const fileTransferData: number[] =
-            fileTransferDataset?.data ?? [];
-        const elapsedData: number[] = fileTransferDataset?.elapsedMs ?? [];
-        const fileSizeMbData: number[] = fileTransferDataset?.fileSizeMb ?? [];
+            (fileTransferDataset?.data as number[]) ?? [];
+        const elapsedData: number[] =
+            (fileTransferDataset?.elapsedMs as number[]) ?? [];
+        const fileSizeMbData: number[] =
+            (fileTransferDataset?.fileSizeMb as number[]) ?? [];
 
         const maxData: number[] =
-            maxIndex >= 0 ? (chart.data.datasets[maxIndex] as any).actualMaxValues ?? [] : [];
+            maxIndex >= 0
+                ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  ((chart.data.datasets[maxIndex] as Record<string, any>)
+                      .actualMaxValues ?? [])
+                : [];
 
         const xLeft = xScale.getPixelForValue(0);
         const trackWidth = chartArea.right - xLeft;
 
-        const maxMeta =
+        // eslint-disable-next-line no-underscore-dangle
+        const _maxMeta =
             maxIndex >= 0 ? chart.getDatasetMeta(maxIndex) : undefined;
 
         // Compute available height per category slot so all rows
@@ -107,12 +125,12 @@ const throughputLabelPlugin = {
         const slotHeight =
             phyCount > 1
                 ? Math.abs(
-                      (meta.data[1].y as number) -
-                          (meta.data[0].y as number),
+                      (meta.data[1].y as number) - (meta.data[0].y as number),
                   )
                 : chartArea.bottom - chartArea.top;
 
-        meta.data.forEach((bar: any, index: number) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        meta.data.forEach((bar: Record<string, any>, index: number) => {
             const percent = fileTransferData[index] ?? 0;
             const elapsedMs = elapsedData[index] ?? 0;
             const fileSizeMb = fileSizeMbData[index] ?? 100;
@@ -122,7 +140,10 @@ const throughputLabelPlugin = {
             const barHeight = Math.max(1, bar.height as number);
 
             // Skip bars that are entirely outside the chart area
-            if (yBottom < chartArea.top || (bar.y as number) - halfHeight > chartArea.bottom) {
+            if (
+                yBottom < chartArea.top ||
+                (bar.y as number) - halfHeight > chartArea.bottom
+            ) {
                 return;
             }
 
@@ -136,7 +157,9 @@ const throughputLabelPlugin = {
 
             const rawValue = throughputData[index];
             const safeValue =
-                rawValue === undefined || rawValue === null || Number.isNaN(rawValue)
+                rawValue === undefined ||
+                rawValue === null ||
+                Number.isNaN(rawValue)
                     ? 0
                     : rawValue;
 
@@ -160,7 +183,8 @@ const throughputLabelPlugin = {
             }
 
             // Resolve this bar's fill color so the label matches the bar
-            const barColors = chart.data.datasets[throughputIndex].backgroundColor as string[] | string;
+            const barColors = chart.data.datasets[throughputIndex]
+                .backgroundColor as string[] | string;
             const barFillColor = Array.isArray(barColors)
                 ? (barColors[index] ?? color.bar.normal)
                 : (barColors ?? color.bar.normal);
@@ -211,7 +235,9 @@ const throughputLabelPlugin = {
                 const seconds = totalSeconds % 60;
                 const timeLabel = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 
-                const bestCompletedMs = (fileTransferDataset as any)?.bestCompletedMs?.[index] ?? 0;
+                const bestCompletedMs =
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    (fileTransferDataset as any)?.bestCompletedMs?.[index] ?? 0;
                 const bestTotalSeconds = Math.floor(bestCompletedMs / 1000);
                 const bestMinutes = Math.floor(bestTotalSeconds / 60);
                 const bestSeconds = bestTotalSeconds % 60;
@@ -273,6 +299,7 @@ const withOpacity = (hexColor: string, opacity: number) => {
     return `${hexColor}${alpha}`;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const createTransferHistoryGradient = (chart: any) => {
     const { ctx, chartArea } = chart;
 
@@ -308,9 +335,7 @@ export default () => {
     const noData = useSelector(getNoDataReceived);
     const showCompanionPrompt = useSelector(getShowCompanionProgrammingPrompt);
     const companionTargetSerial = useSelector(getCompanionTargetSerial);
-    const companionProgrammingError = useSelector(
-        getCompanionProgrammingError,
-    );
+    const companionProgrammingError = useSelector(getCompanionProgrammingError);
     const mainProgrammedSerial = useSelector(getMainProgrammedSerial);
     const connectedDevices = useSelector(getDevices);
     const dispatch = useDispatch();
@@ -326,7 +351,9 @@ export default () => {
     const visibleThroughput = enabledIndices.map(
         index => activeThroughput[index] ?? 0,
     );
-    const visibleCapacityMax = enabledIndices.map(index => PHY_MAX_KBPS[index] ?? 1000);
+    const visibleCapacityMax = enabledIndices.map(
+        index => PHY_MAX_KBPS[index] ?? 1000,
+    );
     const visibleChartMax = Math.max(100, ...visibleCapacityMax);
     const isSinglePhyActive = enabledIndices.length === 1;
     const singleActivePhyIndex = isSinglePhyActive ? enabledIndices[0] : -1;
@@ -334,9 +361,9 @@ export default () => {
         enableGraphOnSinglePhy && isSinglePhyActive;
     const [now, setNow] = useState(() => Date.now());
     const [lastUpdatedPhyIndex, setLastUpdatedPhyIndex] = useState<number>(-1);
-    const [fileTransferProgress, setFileTransferProgress] = useState<
-        number[]
-    >(() => new Array(phyThroughput.length).fill(0));
+    const [fileTransferProgress, setFileTransferProgress] = useState<number[]>(
+        () => new Array(phyThroughput.length).fill(0),
+    );
     const [fileTransferElapsedMs, setFileTransferElapsedMs] = useState<
         number[]
     >(() => new Array(phyThroughput.length).fill(0));
@@ -346,8 +373,7 @@ export default () => {
     const [singlePhyHistory, setSinglePhyHistory] = useState<
         ThroughputSample[]
     >([]);
-    const [singlePhyHistoryArmed, setSinglePhyHistoryArmed] =
-        useState(false);
+    const [singlePhyHistoryArmed, setSinglePhyHistoryArmed] = useState(false);
     const showStartupDialog = useSelector(getShowStartupDialog);
     const lastTickRef = useRef(now);
     const lastSampledUpdatedAtRef = useRef(0);
@@ -380,6 +406,8 @@ export default () => {
         setSinglePhyHistory([]);
         lastSampledUpdatedAtRef.current = 0;
         setSinglePhyHistoryArmed(shouldShowSinglePhyGraph);
+        // shouldShowSinglePhyGraph intentionally excluded - only reset on trigger change
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [fileTransferResetTrigger]);
 
     useEffect(() => {
@@ -400,21 +428,14 @@ export default () => {
         const currentProgress = fileTransferProgress[singleActivePhyIndex] ?? 0;
         const previousProgress = lastSinglePhyProgressRef.current;
 
-        if (
-            previousProgress !== null &&
-            currentProgress < previousProgress
-        ) {
+        if (previousProgress !== null && currentProgress < previousProgress) {
             setSinglePhyHistory([]);
             lastSampledUpdatedAtRef.current = 0;
             setSinglePhyHistoryArmed(true);
         }
 
         lastSinglePhyProgressRef.current = currentProgress;
-    }, [
-        fileTransferProgress,
-        shouldShowSinglePhyGraph,
-        singleActivePhyIndex,
-    ]);
+    }, [fileTransferProgress, shouldShowSinglePhyGraph, singleActivePhyIndex]);
 
     useEffect(() => {
         const previous = lastTickRef.current;
@@ -436,8 +457,7 @@ export default () => {
                 // throughputKbps is kilobits per second, dtMs is milliseconds
                 // Bits transferred in this interval: throughputKbps * dtMs
                 // (since kbps * 1000 * dtMs/1000 = kbps * dtMs)
-                const delta =
-                    (throughputKbps * dtMs * 100) / fileSizeBits;
+                const delta = (throughputKbps * dtMs * 100) / fileSizeBits;
                 const next = value + delta;
 
                 // When reaching or exceeding 100%, wrap back to 0% and start over
@@ -454,8 +474,7 @@ export default () => {
                 const throughputKbps = activeThroughput[index] ?? 0;
                 if (throughputKbps <= 0) return elapsed;
 
-                const delta =
-                    (throughputKbps * dtMs * 100) / fileSizeBits;
+                const delta = (throughputKbps * dtMs * 100) / fileSizeBits;
                 const currentProgress = fileTransferProgress[index] ?? 0;
                 const nextProgress = currentProgress + delta;
 
@@ -472,15 +491,17 @@ export default () => {
                 const throughputKbps = activeThroughput[index] ?? 0;
                 if (throughputKbps <= 0) return best;
 
-                const delta =
-                    (throughputKbps * dtMs * 100) / fileSizeBits;
+                const delta = (throughputKbps * dtMs * 100) / fileSizeBits;
                 const currentProgress = fileTransferProgress[index] ?? 0;
                 const nextProgress = currentProgress + delta;
 
                 // When progress reaches 100%, update bestCompletedElapsedMs if this time is better (lower)
                 if (nextProgress >= 100) {
-                    const completedTime = (fileTransferElapsedMs[index] ?? 0) + dtMs;
-                    return best === 0 ? completedTime : Math.min(best, completedTime);
+                    const completedTime =
+                        (fileTransferElapsedMs[index] ?? 0) + dtMs;
+                    return best === 0
+                        ? completedTime
+                        : Math.min(best, completedTime);
                 }
 
                 return best;
@@ -560,20 +581,24 @@ export default () => {
                 );
             })
             .map(d => ({
+                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
                 serialNumber: d.serialNumber!,
                 boardVersion: d.devkit?.boardVersion ?? 'Device',
             }));
     }, [mainProgrammedSerial, connectedDevices]);
 
     const currentSinglePhyThroughput =
-        singleActivePhyIndex >= 0 ? activeThroughput[singleActivePhyIndex] ?? 0 : 0;
+        singleActivePhyIndex >= 0
+            ? ((activeThroughput[singleActivePhyIndex] as number) ?? 0)
+            : 0;
     const singlePhyGraphMax = Math.max(
         MIN_GRAPH_MAX_KBPS,
         Math.ceil(
             (Math.max(
                 currentSinglePhyThroughput,
                 ...singlePhyHistory.map(sample => sample.throughputKbps),
-            ) * GRAPH_Y_HEADROOM) /
+            ) *
+                GRAPH_Y_HEADROOM) /
                 100,
         ) * 100,
     );
@@ -595,6 +620,7 @@ export default () => {
                         },
                         data: visibleCapacityMax,
                         actualMaxValues: visibleMaxThroughput,
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     } as any,
                     {
                         label: 'filetransfer',
@@ -617,6 +643,7 @@ export default () => {
                         datalabels: {
                             display: false,
                         },
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     } as any,
                     {
                         label: 'Throughput',
@@ -715,6 +742,7 @@ export default () => {
                 )}
             <div className="position-relative flex-grow-1 overflow-hidden">
                 <Main>
+                    {/* eslint-disable-next-line no-nested-ternary */}
                     {displayType === 'gauge' ? (
                         <GaugeView
                             singlePhyTopContent={
@@ -727,8 +755,12 @@ export default () => {
                                                     data: singlePhyGraphPoints,
                                                     parsing: false,
                                                     fill: true,
-                                                    borderColor: color.bar.highlight,
-                                                    backgroundColor: (context: any) =>
+                                                    borderColor:
+                                                        color.bar.highlight,
+                                                    backgroundColor: (
+                                                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                                        context: any,
+                                                    ) =>
                                                         createTransferHistoryGradient(
                                                             context.chart,
                                                         ),
@@ -740,7 +772,122 @@ export default () => {
                                                 },
                                             ],
                                         }}
-                                        options={{
+                                        options={
+                                            {
+                                                responsive: true,
+                                                animation: false,
+                                                maintainAspectRatio: false,
+                                                plugins: {
+                                                    legend: { display: false },
+                                                    tooltip: { enabled: false },
+                                                    datalabels: {
+                                                        display: false,
+                                                    },
+                                                    title: {
+                                                        display: true,
+                                                        text: `${PHY_LABELS[singleActivePhyIndex]} transfer history`,
+                                                        align: 'start',
+                                                        color: color.label,
+                                                        font: { size: 14 },
+                                                        padding: { bottom: 12 },
+                                                    },
+                                                },
+                                                scales: {
+                                                    x: {
+                                                        type: 'linear',
+                                                        min: 0,
+                                                        max: GRAPH_X_MAX_PERCENT,
+                                                        grid: {
+                                                            color: withOpacity(
+                                                                color.bar
+                                                                    .highlight,
+                                                                0.08,
+                                                            ),
+                                                        },
+                                                        border: {
+                                                            display: false,
+                                                        },
+                                                        ticks: {
+                                                            color: color.label,
+                                                            maxTicksLimit: 6,
+                                                            callback: (
+                                                                value:
+                                                                    | string
+                                                                    | number,
+                                                            ) => `${value}%`,
+                                                        },
+                                                    },
+                                                    y: {
+                                                        min: 0,
+                                                        max: singlePhyGraphMax,
+                                                        grid: {
+                                                            color: withOpacity(
+                                                                color.bar
+                                                                    .highlight,
+                                                                0.08,
+                                                            ),
+                                                        },
+                                                        border: {
+                                                            display: false,
+                                                        },
+                                                        ticks: {
+                                                            color: color.label,
+                                                            precision: 0,
+                                                            maxTicksLimit: 4,
+                                                        },
+                                                        title: {
+                                                            display: true,
+                                                            text: 'kbps',
+                                                            color: color.label,
+                                                            font: { size: 12 },
+                                                        },
+                                                    },
+                                                },
+                                                elements: {
+                                                    line: {
+                                                        capBezierPoints: true,
+                                                    },
+                                                },
+                                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                            } as any
+                                        }
+                                    />
+                                ) : undefined
+                            }
+                        />
+                    ) : shouldShowSinglePhyGraph ? (
+                        <div
+                            className="d-flex flex-column h-100"
+                            style={{ gap: 16 }}
+                        >
+                            <div style={{ flex: '0 0 38%', minHeight: 0 }}>
+                                <Line
+                                    data={{
+                                        datasets: [
+                                            {
+                                                label: 'Transfer history',
+                                                data: singlePhyGraphPoints,
+                                                parsing: false,
+                                                fill: true,
+                                                borderColor:
+                                                    color.bar.highlight,
+                                                backgroundColor: (
+                                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                                    context: any,
+                                                ) =>
+                                                    createTransferHistoryGradient(
+                                                        context.chart,
+                                                    ),
+                                                pointRadius: 0,
+                                                pointHitRadius: 8,
+                                                pointHoverRadius: 0,
+                                                tension: 0.25,
+                                                borderWidth: 2,
+                                            },
+                                        ],
+                                    }}
+                                    options={
+                                        {
                                             responsive: true,
                                             animation: false,
                                             maintainAspectRatio: false,
@@ -768,12 +915,16 @@ export default () => {
                                                             0.08,
                                                         ),
                                                     },
-                                                    border: { display: false },
+                                                    border: {
+                                                        display: false,
+                                                    },
                                                     ticks: {
                                                         color: color.label,
                                                         maxTicksLimit: 6,
                                                         callback: (
-                                                            value: string | number,
+                                                            value:
+                                                                | string
+                                                                | number,
                                                         ) => `${value}%`,
                                                     },
                                                 },
@@ -786,7 +937,9 @@ export default () => {
                                                             0.08,
                                                         ),
                                                     },
-                                                    border: { display: false },
+                                                    border: {
+                                                        display: false,
+                                                    },
                                                     ticks: {
                                                         color: color.label,
                                                         precision: 0,
@@ -801,107 +954,13 @@ export default () => {
                                                 },
                                             },
                                             elements: {
-                                                line: { capBezierPoints: true },
-                                            },
-                                        } as any}
-                                    />
-                                ) : undefined
-                            }
-                        />
-                    ) : shouldShowSinglePhyGraph ? (
-                        <div className="d-flex flex-column h-100" style={{ gap: 16 }}>
-                            <div style={{ flex: '0 0 38%', minHeight: 0 }}>
-                                <Line
-                                    data={{
-                                        datasets: [
-                                            {
-                                                label: 'Transfer history',
-                                                data: singlePhyGraphPoints,
-                                                parsing: false,
-                                                fill: true,
-                                                borderColor: color.bar.highlight,
-                                                backgroundColor: (context: any) =>
-                                                    createTransferHistoryGradient(
-                                                        context.chart,
-                                                    ),
-                                                pointRadius: 0,
-                                                pointHitRadius: 8,
-                                                pointHoverRadius: 0,
-                                                tension: 0.25,
-                                                borderWidth: 2,
-                                            },
-                                        ],
-                                    }}
-                                    options={{
-                                        responsive: true,
-                                        animation: false,
-                                        maintainAspectRatio: false,
-                                        plugins: {
-                                            legend: { display: false },
-                                            tooltip: { enabled: false },
-                                            datalabels: { display: false },
-                                            title: {
-                                                display: true,
-                                                text: `${PHY_LABELS[singleActivePhyIndex]} transfer history`,
-                                                align: 'start',
-                                                color: color.label,
-                                                font: { size: 14 },
-                                                padding: { bottom: 12 },
-                                            },
-                                        },
-                                        scales: {
-                                            x: {
-                                                type: 'linear',
-                                                min: 0,
-                                                max: GRAPH_X_MAX_PERCENT,
-                                                grid: {
-                                                    color: withOpacity(
-                                                        color.bar.highlight,
-                                                        0.08,
-                                                    ),
-                                                },
-                                                border: {
-                                                    display: false,
-                                                },
-                                                ticks: {
-                                                    color: color.label,
-                                                    maxTicksLimit: 6,
-                                                    callback: (
-                                                        value: string | number,
-                                                    ) => `${value}%`,
+                                                line: {
+                                                    capBezierPoints: true,
                                                 },
                                             },
-                                            y: {
-                                                min: 0,
-                                                max: singlePhyGraphMax,
-                                                grid: {
-                                                    color: withOpacity(
-                                                        color.bar.highlight,
-                                                        0.08,
-                                                    ),
-                                                },
-                                                border: {
-                                                    display: false,
-                                                },
-                                                ticks: {
-                                                    color: color.label,
-                                                    precision: 0,
-                                                    maxTicksLimit: 4,
-                                                },
-                                                title: {
-                                                    display: true,
-                                                    text: 'kbps',
-                                                    color: color.label,
-                                                    font: { size: 12 },
-                                                },
-                                            },
-                                        },
-                                        elements: {
-                                            line: {
-                                                capBezierPoints: true,
-                                            },
-                                        },
-                                    } as any}
+                                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                        } as any
+                                    }
                                 />
                             </div>
                             <div style={{ flex: '1 1 auto', minHeight: 0 }}>
@@ -927,39 +986,52 @@ export default () => {
             >
                 <div style={{ maxWidth: 520, fontSize: 13, lineHeight: 1.6 }}>
                     <section style={{ marginBottom: 16 }}>
-                        <strong style={{ fontSize: 14 }}>Hardware Requirements</strong>
+                        <strong style={{ fontSize: 14 }}>
+                            Hardware Requirements
+                        </strong>
                         <p style={{ margin: '6px 0 0' }}>
                             You need two Nordic development kits:
                         </p>
                         <ul style={{ margin: '6px 0 0', paddingLeft: 20 }}>
                             <li>
-                                <strong>Primary device</strong> — DK connected to this
-                                PC (PCA10156/nRF54L15 DK for HDT PHYs, or PCA10056/nRF52840 DK for standard BLE)
+                                <strong>Primary device</strong> — DK connected
+                                to this PC (PCA10156/nRF54L15 DK for HDT PHYs,
+                                or PCA10056/nRF52840 DK for standard BLE)
                             </li>
                             <li>
-                                <strong>Companion device</strong> — a second DK running
-                                the companion firmware (central role)
+                                <strong>Companion device</strong> — a second DK
+                                running the companion firmware (central role)
                             </li>
                         </ul>
                     </section>
 
                     <section style={{ marginBottom: 16 }}>
-                        <strong style={{ fontSize: 14 }}>Getting Started</strong>
+                        <strong style={{ fontSize: 14 }}>
+                            Getting Started
+                        </strong>
                         <ol style={{ margin: '6px 0 0', paddingLeft: 20 }}>
                             <li>
-                                Connect and select your primary device using the device
-                                selector at the top.
+                                Connect and select your primary device using the
+                                device selector at the top.
                             </li>
                             <li>
-                                The app programs compatible firmware automatically. If the kit is already programmed with the correct firmware, you can skip this.
+                                The app programs compatible firmware
+                                automatically. If the kit is already programmed
+                                with the correct firmware, you can skip this.
                             </li>
                             <li>
                                 Select your desired PHYs and click{' '}
-                                <strong>Write config</strong> to apply settings to the
-                                device. (<strong>At evaluation state, only LE 1M and LE 2M are supported</strong>)
+                                <strong>Write config</strong> to apply settings
+                                to the device. (
+                                <strong>
+                                    At evaluation state, only LE 1M and LE 2M
+                                    are supported
+                                </strong>
+                                )
                             </li>
                             <li>
-                                Live throughput per PHY is shown in the main view.
+                                Live throughput per PHY is shown in the main
+                                view.
                             </li>
                         </ol>
                     </section>
@@ -1024,7 +1096,9 @@ export default () => {
                                 ).map(([phy, kbps, hw]) => (
                                     <tr
                                         key={phy}
-                                        style={{ borderBottom: '1px solid #eee' }}
+                                        style={{
+                                            borderBottom: '1px solid #eee',
+                                        }}
                                     >
                                         <td
                                             style={{
@@ -1055,28 +1129,30 @@ export default () => {
                         <strong style={{ fontSize: 14 }}>Tips</strong>
                         <ul style={{ margin: '6px 0 0', paddingLeft: 20 }}>
                             <li>
-                                Use <strong>Bars</strong> view for a side-by-side PHY
-                                comparison; use <strong>Gauge</strong> speedometer style readout.
+                                Use <strong>Bars</strong> view for a
+                                side-by-side PHY comparison; use{' '}
+                                <strong>Gauge</strong> speedometer style
+                                readout.
                             </li>
                             <li>
-                                Enable <strong>Progress bars</strong> in Advanced to
-                                simulate a virtual file transfer.
+                                Enable <strong>Progress bars</strong> in
+                                Advanced to simulate a virtual file transfer.
                             </li>
                             <li>
-                                <strong>Write config</strong> applies your PHY selection
-                                and settings to the connected device.
+                                <strong>Write config</strong> applies your PHY
+                                selection and settings to the connected device.
                             </li>
                             <li>
                                 When only one PHY is enabled, you can see the
-                                throughput history over time in the single PHY 
-                                graph. Use this to see how throughput evolves during 
-                                a transfer, and how it is affected by distance, 
-                                obstacles, etc.
+                                throughput history over time in the single PHY
+                                graph. Use this to see how throughput evolves
+                                during a transfer, and how it is affected by
+                                distance, obstacles, etc.
                             </li>
                             <li>
                                 Reopen this dialog anytime via the{' '}
-                                <strong>Help</strong> button at the bottom of the side
-                                panel.
+                                <strong>Help</strong> button at the bottom of
+                                the side panel.
                             </li>
                         </ul>
                     </section>
@@ -1105,7 +1181,9 @@ export default () => {
                                 {companionProgrammingError}
                             </div>
                         )}
+                        {/* eslint-disable-next-line jsx-a11y/label-has-associated-control */}
                         <label
+                            htmlFor="companion-device-select"
                             style={{
                                 display: 'block',
                                 marginBottom: '12px',
@@ -1116,9 +1194,12 @@ export default () => {
                             Select companion device:
                         </label>
                         <select
+                            id="companion-device-select"
                             value={companionTargetSerial ?? 'none'}
                             onChange={e =>
-                                dispatch(setCompanionTargetSerial(e.target.value))
+                                dispatch(
+                                    setCompanionTargetSerial(e.target.value),
+                                )
                             }
                             style={{
                                 display: 'block',
@@ -1132,19 +1213,27 @@ export default () => {
                             }}
                         >
                             <option value="none">No companion device</option>
-                            {eligibleCompanionDevices.map(device => (
+                            {eligibleCompanionDevices.map(deviceItem => (
                                 <option
-                                    key={device.serialNumber}
-                                    value={device.serialNumber}
+                                    key={deviceItem.serialNumber}
+                                    value={deviceItem.serialNumber}
                                 >
-                                    {device.boardVersion} ({device.serialNumber})
+                                    {deviceItem.boardVersion} (
+                                    {deviceItem.serialNumber})
                                 </option>
                             ))}
                         </select>
-                        <p style={{ fontSize: '13px', color: '#666', margin: 0 }}>
-                            If you select a device above and click Program, the same
-                            firmware as the main device will be flashed to it. Select
-                            "No companion device" to skip this step.
+                        <p
+                            style={{
+                                fontSize: '13px',
+                                color: '#666',
+                                margin: 0,
+                            }}
+                        >
+                            If you select a device above and click Program, the
+                            same firmware as the main device will be flashed to
+                            it. Select &quot;No companion device&quot; to skip
+                            this step.
                         </p>
                     </div>
                 </ConfirmationDialog>

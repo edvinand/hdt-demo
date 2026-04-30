@@ -8,7 +8,10 @@ import React, { useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { NumberInput } from '@nordicsemiconductor/pc-nrfconnect-shared';
 
-import { getDelay, setDelay } from '../../features/throughputDevice/throughputDeviceSlice';
+import {
+    getDelay,
+    setDelay,
+} from '../../features/throughputDevice/throughputDeviceSlice';
 
 export default () => {
     const dispatch = useDispatch();

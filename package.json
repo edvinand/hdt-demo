@@ -3,10 +3,10 @@
     "version": "0.1.0",
     "displayName": "HDT Demo",
     "description": "Live Visualization of High Data Throughput",
-    "homepage": "https://github.com/NordicSemiconductor/pc-nrfconnect-rssi",
+    "homepage": "https://github.com/edvinand/hdt-demo",
     "repository": {
         "type": "git",
-        "url": "https://github.com/NordicSemiconductor/pc-nrfconnect-rssi.git"
+        "url": "https://github.com/edvinand/hdt-demo"
     },
     "author": "Edvin Holmseth",
     "license": "SEE LICENSE IN LICENSE",

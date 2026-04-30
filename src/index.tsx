@@ -15,6 +15,7 @@ import DeviceSelector from './app/DeviceSelector';
 import SidePanel from './app/SidePanel/SidePanel';
 import { reducer } from './app/store';
 import Chart from './features/Chart/Chart';
+
 import './index.css';
 
 telemetry.enableTelemetry();

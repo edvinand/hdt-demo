@@ -5,23 +5,21 @@
  */
 
 import React from 'react';
+import { useDispatch } from 'react-redux';
 import {
     Button,
     Group,
     SidePanel,
 } from '@nordicsemiconductor/pc-nrfconnect-shared';
-import { useDispatch } from 'react-redux';
 
-import {
-    showStartupDialog,
-} from '../../features/throughputDevice/throughputDeviceSlice';
+import { showStartupDialog } from '../../features/throughputDevice/throughputDeviceSlice';
 import useThroughputDevice from '../../features/throughputDevice/useThroughputDevice';
+import Advanced from './Advanced';
+import ConfigPhySelector from './ConfigPhySelector';
 import ControlButtons, { WriteConfigButton } from './ControlButtons';
 import Delay from './Delay';
 import DisplayTypeSelector from './DisplayTypeSelector';
 import ToggleLed from './ToggleLed';
-import ConfigPhySelector from './ConfigPhySelector';
-import Advanced from './Advanced';
 
 export default () => {
     useThroughputDevice();

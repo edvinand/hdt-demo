@@ -48,6 +48,7 @@ export const createRssiDevice = (serialPort: SerialPort) => {
         const delayHex = clampedDelay.toString(16).padStart(2, '0');
 
         const physMask = phyEnabled.reduce(
+            // eslint-disable-next-line no-bitwise
             (mask, enabled, index) => (enabled ? mask | (1 << index) : mask),
             0,
         );

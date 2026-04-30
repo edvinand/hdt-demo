@@ -13,20 +13,20 @@ import {
 } from '@nordicsemiconductor/pc-nrfconnect-shared';
 
 import {
-    getDelay,
-    getIsConnected,
-    getRssiDevice,
-    getPhyEnabled,
-    getVirtualFileSizeMb,
-    getPendingVirtualFileSizeMb,
-    getConnectionIntervalUnits,
-    getPacketSizeBytes,
-    loadDefaultConfig,
     applyCurrentPhyEnabled,
-    applyVirtualFileSizeMb,
     applyEnableGraphOnSinglePhy,
     applyEnableProgressBars,
     applyEnableUartTerminal,
+    applyVirtualFileSizeMb,
+    getConnectionIntervalUnits,
+    getDelay,
+    getIsConnected,
+    getPacketSizeBytes,
+    getPendingVirtualFileSizeMb,
+    getPhyEnabled,
+    getRssiDevice,
+    getVirtualFileSizeMb,
+    loadDefaultConfig,
 } from '../../features/throughputDevice/throughputDeviceSlice';
 
 export default () => {
@@ -44,15 +44,9 @@ export default () => {
     });
 
     return (
-        <>
-            <Button
-                variant="secondary"
-                className="w-100"
-                onClick={loadDefaults}
-            >
-                Load default config
-            </Button>
-        </>
+        <Button variant="secondary" className="w-100" onClick={loadDefaults}>
+            Load default config
+        </Button>
     );
 };
 
@@ -60,7 +54,8 @@ export const WriteConfigButton = () => {
     const isConnected = useSelector(getIsConnected);
     const delay = useSelector(getDelay);
     const phyEnabled = useSelector(getPhyEnabled);
-    const virtualFileSizeMb = useSelector(getVirtualFileSizeMb);
+    // eslint-disable-next-line no-underscore-dangle
+    const _virtualFileSizeMb = useSelector(getVirtualFileSizeMb);
     const pendingVirtualFileSizeMb = useSelector(getPendingVirtualFileSizeMb);
     const connectionIntervalUnits = useSelector(getConnectionIntervalUnits);
     const packetSizeBytes = useSelector(getPacketSizeBytes);

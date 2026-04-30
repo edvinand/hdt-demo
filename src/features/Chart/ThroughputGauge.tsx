@@ -11,7 +11,6 @@ import color from './rssiColors';
 // Arc geometry: 240° sweep starting at 150° (gap at the bottom)
 const ARC_START_DEG = 150;
 const ARC_SWEEP_DEG = 240;
-const ARC_END_DEG = ARC_START_DEG + ARC_SWEEP_DEG;
 
 const toRad = (deg: number) => (deg * Math.PI) / 180;
 
@@ -65,19 +64,30 @@ const ThroughputGauge = ({
     const r = (viewSize - strokeWidth) / 2 - 4;
 
     const safeCapacity = Math.max(1, capacityKbps);
-    const safeSharedCapacity = Math.max(1, maxSharedCapacityKbps ?? capacityKbps);
+    const safeSharedCapacity = Math.max(
+        1,
+        maxSharedCapacityKbps ?? capacityKbps,
+    );
 
     // Background arc scaled to individual PHY capacity
-    const capacityFraction = Math.min(1, Math.max(0, safeCapacity / safeSharedCapacity));
+    const capacityFraction = Math.min(
+        1,
+        Math.max(0, safeCapacity / safeSharedCapacity),
+    );
     const capacityEndDeg = ARC_START_DEG + ARC_SWEEP_DEG * capacityFraction;
 
     // Fill arc scaled to shared capacity (same as bars view)
-    const currentFraction = Math.min(1, Math.max(0, currentKbps / safeSharedCapacity));
-    const maxFraction = Math.min(1, Math.max(0, maxRecordedKbps / safeSharedCapacity));
+    const currentFraction = Math.min(
+        1,
+        Math.max(0, currentKbps / safeSharedCapacity),
+    );
+    const maxFraction = Math.min(
+        1,
+        Math.max(0, maxRecordedKbps / safeSharedCapacity),
+    );
 
     // Arc angles for current value
-    const currentEndDeg =
-        ARC_START_DEG + ARC_SWEEP_DEG * currentFraction;
+    const currentEndDeg = ARC_START_DEG + ARC_SWEEP_DEG * currentFraction;
 
     // Background arc scaled to individual PHY capacity.
     // When possible, split it into two segments with a tiny gap after the
@@ -96,22 +106,10 @@ const ThroughputGauge = ({
         trailingArcStartDeg < capacityEndDeg - lineCapDeg;
 
     const bgArcPathLeading = canShowMaxGap
-        ? describeArc(
-              cx,
-              cy,
-              r,
-              ARC_START_DEG,
-              leadingArcEndDeg,
-          )
+        ? describeArc(cx, cy, r, ARC_START_DEG, leadingArcEndDeg)
         : '';
     const bgArcPathTrailing = canShowMaxGap
-        ? describeArc(
-              cx,
-              cy,
-              r,
-              trailingArcStartDeg,
-              capacityEndDeg,
-          )
+        ? describeArc(cx, cy, r, trailingArcStartDeg, capacityEndDeg)
         : '';
     const bgArcPath = canShowMaxGap
         ? ''

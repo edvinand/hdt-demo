@@ -16,10 +16,10 @@ import {
     getConnectionIntervalUnits,
     getIsConnected,
     getIsPhyFrozen,
+    getPacketSizeBytes,
     getPendingEnableGraphOnSinglePhy,
     getPendingEnableProgressBars,
     getPendingEnableUartTerminal,
-    getPacketSizeBytes,
     getPendingVirtualFileSizeMb,
     getRssiDevice,
     setConnectionIntervalUnits,
@@ -45,10 +45,13 @@ export default () => {
     const isConnected = useSelector(getIsConnected);
     const isPhyFrozen = useSelector(getIsPhyFrozen);
     const rssiDevice = useSelector(getRssiDevice);
-    const enableGraphOnSinglePhy = useSelector(getPendingEnableGraphOnSinglePhy);
+    const enableGraphOnSinglePhy = useSelector(
+        getPendingEnableGraphOnSinglePhy,
+    );
     const enableProgressBars = useSelector(getPendingEnableProgressBars);
     const enableUartTerminal = useSelector(getPendingEnableUartTerminal);
-    const [isFreezeCommandInFlight, setIsFreezeCommandInFlight] = useState(false);
+    const [isFreezeCommandInFlight, setIsFreezeCommandInFlight] =
+        useState(false);
 
     const setFileSize = useCallback(
         (value: number) => {

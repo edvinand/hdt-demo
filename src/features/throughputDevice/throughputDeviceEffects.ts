@@ -52,12 +52,12 @@ export const deviceSetupConfig: DeviceSetupConfig = {
         ),
         jprogDeviceSetup(
             [
-                //{
+                // {
                 //    key: 'nrf52_family',
                 //    fw: getAppFile('fw/rssi-10040.hex'),
                 //    fwVersion: 'rssi-fw-1.0.0',
                 //    fwIdAddress: 0x2000,
-                //},
+                // },
                 {
                     key: 'PCA10156',
                     fw: getAppFile('fw/hdt-nrf54l15.hex'),
@@ -133,8 +133,7 @@ export const setupDeviceAndOpen =
         // Clear any stale companion state before starting a new main programming flow.
         dispatch(markDeviceSetupAttemptStarted());
         const family = device.devkit?.deviceFamily?.toLowerCase() ?? '';
-        const boardVersion =
-            device.devkit?.boardVersion?.toUpperCase() ?? '';
+        const boardVersion = device.devkit?.boardVersion?.toUpperCase() ?? '';
 
         dispatch(hideCompanionProgrammingPrompt());
 
@@ -158,7 +157,9 @@ export const setupDeviceAndOpen =
                     deviceSetupConfig,
                     programmedDevice => {
                         dispatch(openDevice(programmedDevice));
-                        if (getState().app.rssi.didRunProgrammingInCurrentSetup) {
+                        if (
+                            getState().app.rssi.didRunProgrammingInCurrentSetup
+                        ) {
                             dispatch(
                                 openCompanionProgrammingPrompt(
                                     programmedDevice.serialNumber ?? '',
@@ -264,19 +265,20 @@ export const openCompanionProgrammingPrompt =
             lastFlashed &&
             eligibleCompanions.some(d => d.serialNumber === lastFlashed)
                 ? lastFlashed
-                : eligibleCompanions[0].serialNumber ?? 'none';
+                : (eligibleCompanions[0].serialNumber ?? 'none');
         dispatch(setCompanionTargetSerial(defaultCompanion));
     };
 
 export const confirmCompanionProgramming =
-    (): AppThunk =>
-    (dispatch, getState) => {
+    (): AppThunk => (dispatch, getState) => {
         const state = getState().app.rssi;
         const selectedSerial = state.companionTargetSerial;
 
         // If user selected "none", skip companion flashing and close dialog
         if (selectedSerial === 'none' || !selectedSerial) {
-            logger.info('Skipping companion device programming (none selected)');
+            logger.info(
+                'Skipping companion device programming (none selected)',
+            );
             dispatch(hideCompanionProgrammingPrompt());
             return;
         }
@@ -307,6 +309,7 @@ export const confirmCompanionProgramming =
             return;
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const programmingCallback = (result: any) => {
             if (result?.serialNumber) {
                 logger.info(

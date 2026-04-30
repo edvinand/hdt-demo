@@ -11,11 +11,11 @@ import {
     StateSelector,
 } from '@nordicsemiconductor/pc-nrfconnect-shared';
 
+import { PHY_LABELS } from '../../features/throughputDevice/phyLabels';
 import {
     getPhyEnabled,
     setPhyEnabled,
 } from '../../features/throughputDevice/throughputDeviceSlice';
-import { PHY_LABELS } from '../../features/throughputDevice/phyLabels';
 
 const ConfigPhySelector = () => {
     const dispatch = useDispatch();
@@ -33,13 +33,18 @@ const ConfigPhySelector = () => {
             {PHY_LABELS.map((label, index) => {
                 const unsupported = isPca10056 && index < 5;
                 const enabled = phyEnabled[index];
-                const selectedItem = unsupported ? 'Off' : enabled ? 'On' : 'Off';
+                // eslint-disable-next-line no-nested-ternary
+                const selectedItem = unsupported
+                    ? 'Off'
+                    : enabled
+                      ? 'On'
+                      : 'Off';
 
                 return (
                     <div
                         key={label}
                         className={`tw-flex tw-items-center tw-justify-between${
-                            unsupported ? ' tw-opacity-50' : ''
+                            unsupported ? 'tw-opacity-50' : ''
                         }`}
                     >
                         <span className="tw-inline-block tw-w-24 tw-whitespace-nowrap">

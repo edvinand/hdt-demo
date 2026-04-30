@@ -16,12 +16,12 @@ import { createRssiDevice } from './createThroughputDevice';
 import {
     clearRssiData,
     getSerialPort,
+    logUart,
     onReceiveNoRssiData,
     onReceiveRssiData,
     resetIsPhyFrozen,
     resetRssiStore,
     setRssiDevice,
-    logUart,
 } from './throughputDeviceSlice';
 
 export default () => {

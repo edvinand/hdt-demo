@@ -1,5 +1,7 @@
 /*
- * Temporary UART debug terminal overlay
+ * Copyright (c) 2021 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: LicenseRef-Nordic-4-Clause
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -87,6 +89,7 @@ const UartTerminal = () => {
                 ))}
             </div>
             <div>
+                {/* eslint-disable-next-line jsx-a11y/label-has-associated-control */}
                 <label
                     htmlFor="uart-terminal-command-input"
                     style={{
@@ -97,6 +100,7 @@ const UartTerminal = () => {
                         color: '#b8ffb8',
                     }}
                 >
+                    Command:
                 </label>
                 <input
                     id="uart-terminal-command-input"
