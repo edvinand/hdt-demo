@@ -1067,7 +1067,11 @@ export default () => {
                                 and settings to the connected device.
                             </li>
                             <li>
-                                When only one PHY is enabled, you can see the throughput history over time in the single PHY graph. Use this to see how throughput evolves during a transfer, and how it is affected by distance, obstacles, etc.
+                                When only one PHY is enabled, you can see the
+                                throughput history over time in the single PHY 
+                                graph. Use this to see how throughput evolves during 
+                                a transfer, and how it is affected by distance, 
+                                obstacles, etc.
                             </li>
                             <li>
                                 Reopen this dialog anytime via the{' '}
