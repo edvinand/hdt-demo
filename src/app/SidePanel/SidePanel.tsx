@@ -29,29 +29,36 @@ export default () => {
         <SidePanel className="hdt-side-panel-root">
             <div className="hdt-side-panel-layout tw-flex tw-flex-col">
                 <div>
-                    <Group heading="Controls">
-                        <ControlButtons />
-                    </Group>
+                    <div className="tw-mt-4">
+                        <Group heading="DISPLAY TYPE">
+                            <DisplayTypeSelector />
+                        </Group>
+                    </div>
 
-                    <Group heading="DISPLAY TYPE">
-                        <DisplayTypeSelector />
-                    </Group>
+                    <div className="tw-mt-4">
+                        <Group heading="SELECTED PHYS">
+                            <ConfigPhySelector />
+                            <Delay />
+                        </Group>
+                    </div>
 
-                    <Group heading="SELECTED PHYS">
-                        <ConfigPhySelector />
-                        <Delay />
-                    </Group>
+                    <div className="tw-mt-4">
+                        <Group heading="Device">
+                            <ToggleLed />
+                        </Group>
+                    </div>
 
-                    <Group heading="Device">
-                        <ToggleLed />
-                    </Group>
+                    <div className="tw-mt-4">
+                        <Group heading="Advanced" collapsible defaultCollapsed>
+                            <Advanced />
+                        </Group>
+                    </div>
 
-                    <Group heading="Advanced" collapsible defaultCollapsed>
-                        <Advanced />
-                    </Group>
-
-                    <div className="tw-pt-1">
-                        <WriteConfigButton />
+                    <div className="tw-mt-4">
+                        <Group heading="Controls">
+                            <WriteConfigButton />
+                            <ControlButtons />
+                        </Group>
                     </div>
                 </div>
 
