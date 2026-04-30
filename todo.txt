@@ -41,3 +41,14 @@ Text: Roboto
 Gauge view
 Gjør progress bar optional
 Gauges må ha samme skala
+
+Ketil:
+- Ikke card i SidePanel. Bruk "tailwind" til å matche RSSI Viewer.
+- Narrow variant på toggle-greier (state selector)
+Popup med instruksjoner
+
+Flytt write config
+
+Packet size: "Byte" (ikke "B")
+
+Bytt ut svart strek i gauge med hvit gap
