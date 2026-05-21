@@ -50,5 +50,21 @@ Popup med instruksjoner
 Flytt write config
 
 Packet size: "Byte" (ikke "B")
+Tekst burde ikke være større enn "ABOUT"
 
 Bytt ut svart strek i gauge med hvit gap
+
+21/05:
+
+- Toggle LED: 2 buttons. One to toggle serial connected device, one to toggle remote device. Both should be under "Advanced", or even "debug". Add tooltip (mouseOver).
+- Wait on 100% until all are completed, then reset the progress
+- Packet size: N "Bytes"
+- One by one PHY (option in "advanced")
+- "PHY Datarate" instead of "Peak Throughput"
+- Explain something about connection parameters 
+- Name: HDT Demo -> Bluetooth HDT Demo
+- Start/stop/reset
+- Check if the device is already programmed
+- Are you sure you want to program (companion device)
+- File transfer in gauge view
+

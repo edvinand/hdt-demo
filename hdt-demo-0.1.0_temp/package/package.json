@@ -1,0 +1,57 @@
+{
+    "name": "hdt-demo",
+    "version": "0.1.0",
+    "displayName": "HDT Demo",
+    "description": "Live Visualization of High Data Throughput",
+    "homepage": "https://github.com/NordicSemiconductor/pc-nrfconnect-rssi",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/NordicSemiconductor/pc-nrfconnect-rssi.git"
+    },
+    "author": "Edvin Holmseth",
+    "license": "SEE LICENSE IN LICENSE",
+    "engines": {
+        "nrfconnect": ">=5.2.0"
+    },
+    "nrfConnectForDesktop": {
+        "nrfutilCore": "8.1.1",
+        "nrfutil": {
+            "device": [
+                "2.10.2"
+            ]
+        },
+        "html": "dist/index.html"
+    },
+    "files": [
+        "dist/",
+        "fw/*.hex",
+        "fw/*.zip",
+        "resources/icon.*",
+        "Changelog.md",
+        "LICENSE"
+    ],
+    "main": "dist/bundle.js",
+    "prettier": "@nordicsemiconductor/pc-nrfconnect-shared/config/prettier.config.js",
+    "scripts": {
+        "watch": "run-p --silent --continue-on-error watch:*",
+        "watch:build": "run-esbuild --watch --include-bootloader",
+        "watch:types": "tsc --noEmit --pretty --watch --preserveWatchOutput",
+        "build:dev": "run-esbuild --include-bootloader",
+        "build:prod": "run-esbuild --prod --include-bootloader",
+        "test": "jest --passWithNoTests",
+        "check": "run-p --silent --continue-on-error --print-label check:*",
+        "check:app": "check-app-properties",
+        "check:lint": "eslint --color .",
+        "check:types": "check-for-typescript tsc --noEmit --pretty",
+        "check:license": "nrfconnect-license check",
+        "nordic-publish": "node ./dist/nordic-publish.js",
+        "prepare": "husky install"
+    },
+    "devDependencies": {
+        "@nordicsemiconductor/pc-nrfconnect-shared": "^241.0.0",
+        "chart.js": "^4.0.1",
+        "chartjs-plugin-datalabels": "2.2.0",
+        "jest": "^30.2.0",
+        "react-chartjs-2": "^5.0.1"
+    }
+}
