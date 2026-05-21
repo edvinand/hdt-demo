@@ -56,7 +56,7 @@ Bytt ut svart strek i gauge med hvit gap
 
 21/05:
 
-x Set up new branch
+- Set up new branch
 - Toggle LED: 2 buttons. One to toggle serial connected device, one to toggle remote device. Both should be under "Advanced", or even "debug". Add tooltip (mouseOver).
 - Wait on 100% until all are completed, then reset the progress
 - Packet size: N "Bytes"
