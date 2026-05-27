@@ -85,6 +85,8 @@ export const createRssiDevice = (serialPort: SerialPort) => {
             await pauseReading();
         },
         writeConfig,
+        toggleSerialLed: () => writeAndDrain('led0\r'),
+        toggleRemoteLed: () => writeAndDrain('led1\r'),
         toggleLED: () => writeAndDrain('led\r'),
         freezePhy: () => writeAndDrain('freeze\r'),
         unfreezePhy: () => writeAndDrain('unfreeze\r'),

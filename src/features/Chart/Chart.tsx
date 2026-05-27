@@ -33,20 +33,32 @@ import {
     recoverHex,
 } from '../throughputDevice/throughputDeviceEffects';
 import {
+    advanceOneActivePhySequence,
     getAppliedPhyEnabled,
     getCompanionProgrammingError,
     getCompanionTargetSerial,
+    getConnectionIntervalUnits,
+    getDelay,
     getDisplayType,
     getEnableGraphOnSinglePhy,
+    getOneActivePhyCurrentIndex,
+    getOneActivePhyEnabled,
+    getOneActivePhySequenceActive,
+    getOneActivePhySequenceMask,
     getEnableProgressBars,
-    getEnableUartTerminal,
+    getPendingEnableUartTerminal,
     getFileTransferResetTrigger,
+    getPacketSizeBytes,
+    getPhyEnabled,
     getMainProgrammedSerial,
     getNoDataReceived,
+    getIsPaused,
     getPhyMaxThroughput,
     getPhyThroughput,
     getPhyUpdatedAt,
+    getRssiDevice,
     getShowCompanionProgrammingPrompt,
+    getIsCompanionProgrammingInProgress,
     getShowStartupDialog,
     getVirtualFileSizeMb,
     hideStartupDialog,
@@ -324,24 +336,43 @@ export default () => {
     const phyThroughput = useSelector(getPhyThroughput);
     const phyUpdatedAt = useSelector(getPhyUpdatedAt);
     const phyMaxThroughput = useSelector(getPhyMaxThroughput);
+    const configuredPhyEnabled = useSelector(getPhyEnabled);
     const virtualFileSizeMb = useSelector(getVirtualFileSizeMb);
+    const delay = useSelector(getDelay);
+    const connectionIntervalUnits = useSelector(getConnectionIntervalUnits);
+    const packetSizeBytes = useSelector(getPacketSizeBytes);
     const fileTransferResetTrigger = useSelector(getFileTransferResetTrigger);
     const enableGraphOnSinglePhy = useSelector(getEnableGraphOnSinglePhy);
     const enableProgressBars = useSelector(getEnableProgressBars);
-    const enableUartTerminal = useSelector(getEnableUartTerminal);
+    const enableUartTerminal = useSelector(getPendingEnableUartTerminal);
+    const oneActivePhyEnabled = useSelector(getOneActivePhyEnabled);
+    const oneActivePhySequenceMask = useSelector(getOneActivePhySequenceMask);
+    const oneActivePhyCurrentIndex = useSelector(getOneActivePhyCurrentIndex);
+    const oneActivePhySequenceActive = useSelector(getOneActivePhySequenceActive);
+    const rssiDevice = useSelector(getRssiDevice);
     const displayType = useSelector(getDisplayType);
     const device = useSelector(selectedDevice);
     const readbackProtection = useSelector(getReadbackProtection);
     const noData = useSelector(getNoDataReceived);
+    const isPaused = useSelector(getIsPaused);
     const showCompanionPrompt = useSelector(getShowCompanionProgrammingPrompt);
     const companionTargetSerial = useSelector(getCompanionTargetSerial);
     const companionProgrammingError = useSelector(getCompanionProgrammingError);
+    const isCompanionProgrammingInProgress = useSelector(
+        getIsCompanionProgrammingInProgress,
+    );
     const mainProgrammedSerial = useSelector(getMainProgrammedSerial);
     const connectedDevices = useSelector(getDevices);
     const dispatch = useDispatch();
 
     const activeThroughput = phyThroughput;
-    const enabledIndices = appliedPhyEnabled
+    const displayedPhyEnabled = oneActivePhyEnabled
+        ? configuredPhyEnabled
+        : appliedPhyEnabled;
+    const enabledIndices = displayedPhyEnabled
+        .map((enabled, index) => (enabled ? index : -1))
+        .filter(index => index >= 0);
+    const appliedEnabledIndices = appliedPhyEnabled
         .map((enabled, index) => (enabled ? index : -1))
         .filter(index => index >= 0);
     const visibleLabels = enabledIndices.map(index => PHY_LABELS[index]);
@@ -355,10 +386,14 @@ export default () => {
         index => PHY_MAX_KBPS[index] ?? 1000,
     );
     const visibleChartMax = Math.max(100, ...visibleCapacityMax);
+    const configuredActivePhyCount = configuredPhyEnabled.filter(Boolean).length;
     const isSinglePhyActive = enabledIndices.length === 1;
+    const hasSingleConfiguredPhy = configuredActivePhyCount === 1;
     const singleActivePhyIndex = isSinglePhyActive ? enabledIndices[0] : -1;
+    const activeTransferPhyIndex =
+        appliedEnabledIndices.length === 1 ? appliedEnabledIndices[0] : -1;
     const shouldShowSinglePhyGraph =
-        enableGraphOnSinglePhy && isSinglePhyActive;
+        enableGraphOnSinglePhy && isSinglePhyActive && hasSingleConfiguredPhy;
     const [now, setNow] = useState(() => Date.now());
     const [lastUpdatedPhyIndex, setLastUpdatedPhyIndex] = useState<number>(-1);
     const [fileTransferProgress, setFileTransferProgress] = useState<number[]>(
@@ -378,6 +413,25 @@ export default () => {
     const lastTickRef = useRef(now);
     const lastSampledUpdatedAtRef = useRef(0);
     const lastSinglePhyProgressRef = useRef<number | null>(null);
+    const pendingActivePhySwitchRef = useRef<
+        { index: number; switchedAt: number } | null
+    >(null);
+    const lastActiveTransferPhyIndexRef = useRef(activeTransferPhyIndex);
+    const completedThroughputAt100Ref = useRef<number[]>(
+        new Array(phyThroughput.length).fill(0),
+    );
+
+    const visibleThroughputDisplay = enabledIndices.map((index, rowIndex) => {
+        if (
+            !oneActivePhyEnabled ||
+            !oneActivePhySequenceActive ||
+            (fileTransferProgress[index] ?? 0) < 100
+        ) {
+            return visibleThroughput[rowIndex] ?? 0;
+        }
+
+        return completedThroughputAt100Ref.current[index] ?? 0;
+    });
 
     useEffect(() => {
         // Find which PHY was most recently updated
@@ -399,10 +453,33 @@ export default () => {
         return () => clearInterval(id);
     }, []);
 
+    useEffect(() => {
+        if (
+            !oneActivePhyEnabled ||
+            !oneActivePhySequenceActive ||
+            activeTransferPhyIndex < 0
+        ) {
+            pendingActivePhySwitchRef.current = null;
+            lastActiveTransferPhyIndexRef.current = activeTransferPhyIndex;
+            return;
+        }
+
+        if (activeTransferPhyIndex !== lastActiveTransferPhyIndexRef.current) {
+            pendingActivePhySwitchRef.current = {
+                index: activeTransferPhyIndex,
+                switchedAt: Date.now(),
+            };
+        }
+
+        lastActiveTransferPhyIndexRef.current = activeTransferPhyIndex;
+    }, [oneActivePhyEnabled, oneActivePhySequenceActive, activeTransferPhyIndex]);
+
     // Reset file transfer progress and elapsed time when fileTransferResetTrigger changes
     useEffect(() => {
         setFileTransferProgress(prevProgress => prevProgress.map(() => 0));
         setFileTransferElapsedMs(prevElapsed => prevElapsed.map(() => 0));
+        completedThroughputAt100Ref.current =
+            completedThroughputAt100Ref.current.map(() => 0);
         setSinglePhyHistory([]);
         lastSampledUpdatedAtRef.current = 0;
         setSinglePhyHistoryArmed(shouldShowSinglePhyGraph);
@@ -442,63 +519,130 @@ export default () => {
         lastTickRef.current = now;
         const dtMs = now - previous;
         if (dtMs <= 0) return;
+        if (isPaused) return;
 
         const clampedFileSizeMb = Math.max(1, virtualFileSizeMb);
         const fileSizeBits = clampedFileSizeMb * 1024 * 1024 * 8;
+        const pendingSwitch = pendingActivePhySwitchRef.current;
+        const waitingForActivePhyReport =
+            oneActivePhyEnabled &&
+            oneActivePhySequenceActive &&
+            activeTransferPhyIndex >= 0 &&
+            pendingSwitch?.index === activeTransferPhyIndex &&
+            (phyUpdatedAt[activeTransferPhyIndex] ?? 0) <=
+                pendingSwitch.switchedAt;
+
+        if (!waitingForActivePhyReport && pendingSwitch) {
+            pendingActivePhySwitchRef.current = null;
+        }
+        const shouldResetCurrentActiveBeforeRestart =
+            oneActivePhyEnabled &&
+            oneActivePhySequenceActive &&
+            activeTransferPhyIndex >= 0 &&
+            (fileTransferProgress[activeTransferPhyIndex] ?? 0) >= 100;
+
+        const baselineProgress = fileTransferProgress.map((value, index) => {
+            if (
+                shouldResetCurrentActiveBeforeRestart &&
+                index === activeTransferPhyIndex
+            ) {
+                return 0;
+            }
+
+            return value;
+        });
+
+        const baselineElapsedMs = fileTransferElapsedMs.map((value, index) => {
+            if (
+                shouldResetCurrentActiveBeforeRestart &&
+                index === activeTransferPhyIndex
+            ) {
+                return 0;
+            }
+
+            return value;
+        });
+
+        if (shouldResetCurrentActiveBeforeRestart) {
+            completedThroughputAt100Ref.current[activeTransferPhyIndex] = 0;
+        }
+
+        const progressActiveIndices =
+            oneActivePhyEnabled &&
+            oneActivePhySequenceActive &&
+            activeTransferPhyIndex >= 0
+                ? [activeTransferPhyIndex]
+                : enabledIndices;
+        const enabledIndexSet = new Set(progressActiveIndices);
 
         // Simulate file transfer progress for a virtual file size per PHY.
         // Interpret throughput as kbps and advance progress according to
         // actual download time for that file size.
-        setFileTransferProgress(prevProgress =>
-            prevProgress.map((value, index) => {
-                const throughputKbps = activeThroughput[index] ?? 0;
-                if (throughputKbps <= 0) return value;
+        const nextFileTransferProgress = baselineProgress.map((value, index) => {
+            if (!enabledIndexSet.has(index)) {
+                return value;
+            }
 
-                // throughputKbps is kilobits per second, dtMs is milliseconds
-                // Bits transferred in this interval: throughputKbps * dtMs
-                // (since kbps * 1000 * dtMs/1000 = kbps * dtMs)
-                const delta = (throughputKbps * dtMs * 100) / fileSizeBits;
-                const next = value + delta;
+            const throughputKbps = activeThroughput[index] ?? 0;
+            const gatedThroughputKbps =
+                waitingForActivePhyReport && index === activeTransferPhyIndex
+                    ? 0
+                    : throughputKbps;
+            if (gatedThroughputKbps <= 0 || value >= 100) return value;
 
-                // When reaching or exceeding 100%, wrap back to 0% and start over
-                if (next >= 100) {
-                    return 0;
+            // throughputKbps is kilobits per second, dtMs is milliseconds.
+            // Bits transferred in this interval: throughputKbps * dtMs
+            // (since kbps * 1000 * dtMs/1000 = kbps * dtMs).
+            const delta = (gatedThroughputKbps * dtMs * 100) / fileSizeBits;
+            const next = value + delta;
+
+            return Math.min(100, next);
+        });
+
+        const nextFileTransferElapsedMs = baselineElapsedMs.map(
+            (elapsed, index) => {
+                if (!enabledIndexSet.has(index)) {
+                    return elapsed;
                 }
 
-                return next;
-            }),
-        );
-
-        setFileTransferElapsedMs(prevElapsed =>
-            prevElapsed.map((elapsed, index) => {
                 const throughputKbps = activeThroughput[index] ?? 0;
-                if (throughputKbps <= 0) return elapsed;
+                const gatedThroughputKbps =
+                    waitingForActivePhyReport &&
+                    index === activeTransferPhyIndex
+                        ? 0
+                        : throughputKbps;
+                const currentProgress = baselineProgress[index] ?? 0;
+                const nextProgress = nextFileTransferProgress[index] ?? 0;
 
-                const delta = (throughputKbps * dtMs * 100) / fileSizeBits;
-                const currentProgress = fileTransferProgress[index] ?? 0;
-                const nextProgress = currentProgress + delta;
+                if (gatedThroughputKbps <= 0 || currentProgress >= 100) {
+                    return elapsed;
+                }
 
+                // Keep elapsed time frozen while the bar is held at 100%.
                 if (nextProgress >= 100) {
-                    return 0;
+                    return elapsed + dtMs;
                 }
 
                 return elapsed + dtMs;
-            }),
+            },
         );
+
+        setFileTransferProgress(nextFileTransferProgress);
+        setFileTransferElapsedMs(nextFileTransferElapsedMs);
 
         setBestCompletedElapsedMs(prevBest =>
             prevBest.map((best, index) => {
+                if (!enabledIndexSet.has(index)) return best;
+
                 const throughputKbps = activeThroughput[index] ?? 0;
                 if (throughputKbps <= 0) return best;
 
-                const delta = (throughputKbps * dtMs * 100) / fileSizeBits;
-                const currentProgress = fileTransferProgress[index] ?? 0;
-                const nextProgress = currentProgress + delta;
+                const currentProgress = baselineProgress[index] ?? 0;
+                const nextProgress = nextFileTransferProgress[index] ?? 0;
 
                 // When progress reaches 100%, update bestCompletedElapsedMs if this time is better (lower)
-                if (nextProgress >= 100) {
-                    const completedTime =
-                        (fileTransferElapsedMs[index] ?? 0) + dtMs;
+                if (currentProgress < 100 && nextProgress >= 100) {
+                    const completedTime = nextFileTransferElapsedMs[index] ?? 0;
                     return best === 0
                         ? completedTime
                         : Math.min(best, completedTime);
@@ -507,12 +651,93 @@ export default () => {
                 return best;
             }),
         );
+
+        const allEnabledTransfersCompleted =
+            enabledIndices.length > 0 &&
+            enabledIndices.every(
+                index => (nextFileTransferProgress[index] ?? 0) >= 100,
+            );
+
+        const shouldAdvanceOneActiveSequence =
+            oneActivePhyEnabled &&
+            oneActivePhySequenceActive &&
+            oneActivePhyCurrentIndex >= 0 &&
+            activeTransferPhyIndex >= 0 &&
+            activeTransferPhyIndex === oneActivePhyCurrentIndex;
+
+        if (shouldAdvanceOneActiveSequence) {
+            const currentActiveProgress =
+                baselineProgress[activeTransferPhyIndex] ?? 0;
+            const nextActiveProgress =
+                nextFileTransferProgress[activeTransferPhyIndex] ?? 0;
+
+            if (currentActiveProgress < 100 && nextActiveProgress >= 100) {
+                completedThroughputAt100Ref.current[activeTransferPhyIndex] =
+                    activeThroughput[activeTransferPhyIndex] ?? 0;
+
+                const activeIndices = oneActivePhySequenceMask
+                    .map((enabled, index) => (enabled ? index : -1))
+                    .filter(index => index >= 0);
+
+                if (activeIndices.length > 0) {
+                    const currentPos = activeIndices.indexOf(
+                        oneActivePhyCurrentIndex,
+                    );
+                    const nextPos =
+                        currentPos < 0
+                            ? 0
+                            : (currentPos + 1) % activeIndices.length;
+                    const nextPhyIndex = activeIndices[nextPos];
+
+                    const nextSinglePhyMask = oneActivePhySequenceMask.map(
+                        (enabled, index) => enabled && index === nextPhyIndex,
+                    );
+
+                    rssiDevice?.writeConfig({
+                        delay,
+                        phyEnabled: nextSinglePhyMask,
+                        virtualFileSizeMb,
+                        connectionIntervalUnits,
+                        packetSizeBytes,
+                    });
+                    pendingActivePhySwitchRef.current = {
+                        index: nextPhyIndex,
+                        switchedAt: Date.now(),
+                    };
+                    dispatch(advanceOneActivePhySequence());
+                    return;
+                }
+            }
+        }
+
+        // Once every enabled PHY reached 100%, restart all bars together.
+        if (allEnabledTransfersCompleted) {
+            if (oneActivePhyEnabled && oneActivePhySequenceActive) {
+                return;
+            }
+            setFileTransferProgress(prevProgress => prevProgress.map(() => 0));
+            setFileTransferElapsedMs(prevElapsed => prevElapsed.map(() => 0));
+            return;
+        }
     }, [
         now,
         activeThroughput,
+        connectionIntervalUnits,
+        delay,
+        dispatch,
+        enabledIndices,
         fileTransferProgress,
         fileTransferElapsedMs,
-        bestCompletedElapsedMs,
+        isPaused,
+        oneActivePhyCurrentIndex,
+        oneActivePhyEnabled,
+        oneActivePhySequenceActive,
+        oneActivePhySequenceMask,
+        packetSizeBytes,
+        phyUpdatedAt,
+        rssiDevice,
+        activeTransferPhyIndex,
+        singleActivePhyIndex,
         virtualFileSizeMb,
     ]);
 
@@ -657,7 +882,7 @@ export default () => {
                         grouped: false,
                         order: 0,
                         maxBarThickness: 50,
-                        data: visibleThroughput,
+                        data: visibleThroughputDisplay,
                         datalabels: {
                             display: false,
                         },
@@ -745,6 +970,11 @@ export default () => {
                     {/* eslint-disable-next-line no-nested-ternary */}
                     {displayType === 'gauge' ? (
                         <GaugeView
+                            fileTransferProgress={fileTransferProgress}
+                            fileTransferElapsedMs={fileTransferElapsedMs}
+                            bestCompletedElapsedMs={bestCompletedElapsedMs}
+                            virtualFileSizeMb={virtualFileSizeMb}
+                            enableProgressBars={enableProgressBars}
                             singlePhyTopContent={
                                 shouldShowSinglePhyGraph ? (
                                     <Line
@@ -975,7 +1205,7 @@ export default () => {
             </div>
             <ConfirmationDialog
                 isVisible={showStartupDialog}
-                title="Getting Started with HDT Demo"
+                title="Getting Started with the Bluetooth HDT Demo"
                 confirmLabel="Ok"
                 onConfirm={() => dispatch(hideStartupDialog())}
                 optionalLabel="Don't show again"
@@ -1021,8 +1251,8 @@ export default () => {
                             </li>
                             <li>
                                 Select your desired PHYs and click{' '}
-                                <strong>Write config</strong> to apply settings
-                                to the device. (
+                                <strong>Start</strong> to apply settings
+                                to the device. Whenever you change any settings you need to click <strong>Restart</strong> to make these settings apply.(
                                 <strong>
                                     At evaluation state, only LE 1M and LE 2M
                                     are supported
@@ -1062,7 +1292,7 @@ export default () => {
                                             padding: '3px 8px',
                                         }}
                                     >
-                                        Peak throughput
+                                        Data rate
                                     </th>
                                     <th
                                         style={{
@@ -1070,7 +1300,7 @@ export default () => {
                                             padding: '3px 0',
                                         }}
                                     >
-                                        Requires
+                                        Supported boards
                                     </th>
                                 </tr>
                             </thead>
@@ -1126,6 +1356,19 @@ export default () => {
                     </section>
 
                     <section>
+                        <strong style={{ fontSize: 14 }}>
+                            Connection Parameters
+                        </strong>
+                        <p style={{ margin: '6px 0 0' }}>
+                            You can adjust the connection parameters (connection
+                            interval, MTU, and data length) in the side panel.
+                            The default values are tuned to give the best
+                            throughput for each PHY mode, so in most cases you
+                            do not need to change them.
+                        </p>
+                    </section>
+
+                    <section>
                         <strong style={{ fontSize: 14 }}>Tips</strong>
                         <ul style={{ margin: '6px 0 0', paddingLeft: 20 }}>
                             <li>
@@ -1139,7 +1382,7 @@ export default () => {
                                 Advanced to simulate a virtual file transfer.
                             </li>
                             <li>
-                                <strong>Write config</strong> applies your PHY
+                                <strong>Start/Restart</strong> applies your PHY
                                 selection and settings to the connected device.
                             </li>
                             <li>
@@ -1162,7 +1405,10 @@ export default () => {
                 <ConfirmationDialog
                     isVisible={showCompanionPrompt}
                     title="Program Companion Device"
-                    onConfirm={() => dispatch(confirmCompanionProgramming())}
+                    onConfirm={() => {
+                        if (isCompanionProgrammingInProgress) return;
+                        dispatch(confirmCompanionProgramming());
+                    }}
                     onCancel={() => dispatch(cancelCompanionProgramming())}
                 >
                     <div style={{ minWidth: '400px', maxWidth: '600px' }}>
@@ -1201,6 +1447,7 @@ export default () => {
                                     setCompanionTargetSerial(e.target.value),
                                 )
                             }
+                            disabled={isCompanionProgrammingInProgress}
                             style={{
                                 display: 'block',
                                 width: '100%',

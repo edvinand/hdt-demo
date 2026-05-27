@@ -7,6 +7,7 @@
 import {
     AppThunk,
     Device,
+    DeviceSetup,
     DeviceSetupConfig,
     getAppFile,
     getDevices,
@@ -16,19 +17,246 @@ import {
     prepareDevice,
     sdfuDeviceSetup,
 } from '@nordicsemiconductor/pc-nrfconnect-shared';
+import { NrfutilDeviceLib } from '@nordicsemiconductor/pc-nrfconnect-shared/nrfutil/device';
+import xRead from '@nordicsemiconductor/pc-nrfconnect-shared/nrfutil/device/xRead';
+import { readFileSync } from 'fs';
 import { SerialPort } from 'serialport';
 
 import {
+    clearCompanionProgrammingError,
     clearDeviceSetupAttempt,
     clearSerialPort,
     hideCompanionProgrammingPrompt,
     markDeviceSetupAttemptStarted,
     setCompanionProgrammingError,
     setCompanionTargetSerial,
+    setIsCompanionProgrammingInProgress,
     setLastFlashedCompanionSerial,
     setSerialPort,
     showCompanionProgrammingPrompt,
 } from './throughputDeviceSlice';
+
+type JprogEntry = {
+    key: string;
+    description?: string;
+    fw: string;
+    fwIdAddress: number;
+    fwVersion: string;
+};
+
+const TAIL_COMPARE_BYTES = 20;
+const hexTailCache = new Map<string, { startAddress: number; bytesHex: string }>();
+
+const normalizeHex = (value: string) => value.replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+
+const parseReadIntelHexToBytes = (intelHex: string) => {
+    const bytes: number[] = [];
+
+    intelHex
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(line => line.startsWith(':') && line.length >= 11)
+        .forEach(line => {
+            const count = Number.parseInt(line.slice(1, 3), 16);
+            const recordType = Number.parseInt(line.slice(7, 9), 16);
+            if (recordType !== 0x00 || count <= 0) {
+                return;
+            }
+
+            const data = line.slice(9, 9 + count * 2);
+            for (let i = 0; i < data.length; i += 2) {
+                bytes.push(Number.parseInt(data.slice(i, i + 2), 16));
+            }
+        });
+
+    return bytes;
+};
+
+const getHexTailSignature = (fwPath: string, compareBytes = TAIL_COMPARE_BYTES) => {
+    const cached = hexTailCache.get(fwPath);
+    if (cached) {
+        return cached;
+    }
+
+    const text = readFileSync(fwPath, 'utf8');
+    const lines = text
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(Boolean);
+
+    let upperAddress = 0;
+    let segmentAddress = 0;
+    const mem = new Map<number, number>();
+
+    lines.forEach(line => {
+        if (!line.startsWith(':') || line.length < 11) {
+            return;
+        }
+
+        const count = Number.parseInt(line.slice(1, 3), 16);
+        const addr = Number.parseInt(line.slice(3, 7), 16);
+        const recordType = Number.parseInt(line.slice(7, 9), 16);
+        const data = line.slice(9, 9 + count * 2);
+
+        if (recordType === 0x04) {
+            upperAddress = Number.parseInt(data, 16) << 16;
+            segmentAddress = 0;
+            return;
+        }
+
+        if (recordType === 0x02) {
+            segmentAddress = Number.parseInt(data, 16) << 4;
+            upperAddress = 0;
+            return;
+        }
+
+        if (recordType !== 0x00 || count <= 0) {
+            return;
+        }
+
+        const baseAddress = upperAddress + segmentAddress + addr;
+        for (let i = 0; i < count; i += 1) {
+            const byteHex = data.slice(i * 2, i * 2 + 2);
+            mem.set(baseAddress + i, Number.parseInt(byteHex, 16));
+        }
+    });
+
+    const addresses = [...mem.keys()].sort((a, b) => a - b);
+    if (addresses.length < compareBytes) {
+        throw new Error(`Firmware file ${fwPath} has too little data to compare.`);
+    }
+
+    const endAddress = addresses[addresses.length - 1] + 1;
+    const startAddress = endAddress - compareBytes;
+    const tailBytes: number[] = [];
+
+    for (let address = startAddress; address < endAddress; address += 1) {
+        const value = mem.get(address);
+        if (value === undefined) {
+            throw new Error(
+                `Firmware file ${fwPath} has sparse data in tail range 0x${startAddress.toString(
+                    16,
+                )}-0x${(endAddress - 1).toString(16)}.`,
+            );
+        }
+        tailBytes.push(value);
+    }
+
+    const result = {
+        startAddress,
+        bytesHex: tailBytes
+            .map(byte => byte.toString(16).padStart(2, '0'))
+            .join('')
+            .toUpperCase(),
+    };
+
+    hexTailCache.set(fwPath, result);
+    return result;
+};
+
+const matchingFirmwareForDevice = (
+    device: Device,
+    deviceInfo: Parameters<DeviceSetup['isExpectedFirmware']>[1],
+    firmware: JprogEntry[],
+) => {
+    const family = (device.devkit?.deviceFamily || '').toLowerCase();
+    const deviceType = (deviceInfo?.jlink?.deviceVersion || '').toLowerCase();
+    const shortDeviceType = deviceType.split('_').shift();
+    const boardVersion = (device.devkit?.boardVersion || '').toLowerCase();
+
+    return firmware.filter(fw => {
+        const key = fw.key.toLowerCase();
+        return (
+            key === deviceType ||
+            key === shortDeviceType ||
+            key === boardVersion ||
+            key === family
+        );
+    });
+};
+
+const jprogDeviceSetupWithHexTailVerify = (
+    firmware: JprogEntry[],
+    needSerialport = false,
+    hideDeviceSetupWhenProtected = false,
+): DeviceSetup => {
+    const baseSetup = jprogDeviceSetup(
+        firmware,
+        needSerialport,
+        hideDeviceSetupWhenProtected,
+    );
+
+    return {
+        ...baseSetup,
+        isExpectedFirmware:
+            (device, deviceInfo) =>
+            async dispatch => {
+                const baseResult = {
+                    validFirmware: false,
+                    device,
+                };
+
+                const candidates = matchingFirmwareForDevice(
+                    baseResult.device,
+                    deviceInfo,
+                    firmware,
+                );
+
+                for (const candidate of candidates) {
+                    try {
+                        const tail = getHexTailSignature(candidate.fw);
+                        const read = await xRead(baseResult.device, {
+                            address: tail.startAddress,
+                            bytes: TAIL_COMPARE_BYTES,
+                            width: 8,
+                            direct: true,
+                        });
+
+                        const readHex = normalizeHex(
+                            parseReadIntelHexToBytes(read.intelHex)
+                                .map(byte => byte.toString(16).padStart(2, '0'))
+                                .join(''),
+                        );
+
+                        if (readHex === tail.bytesHex) {
+                            logger.info(
+                                `Matched firmware by HEX tail for ${candidate.key} at 0x${tail.startAddress.toString(
+                                    16,
+                                )}.`,
+                            );
+                            return {
+                                ...baseResult,
+                                validFirmware: true,
+                            };
+                        }
+                    } catch (error) {
+                        logger.warn(
+                            `HEX tail verification failed for ${candidate.key}: ${String(
+                                error,
+                            )}`,
+                        );
+                    }
+                }
+
+                return baseResult;
+            },
+    };
+};
+
+const jprogFirmware: JprogEntry[] = [
+    {
+        key: 'PCA10156',
+        fw: getAppFile('fw/hdt-nrf54l15.hex'),
+        fwVersion: 'hdt-nrf54l15',
+        fwIdAddress: 0x0,
+    },
+    {
+        key: 'PCA10056',
+        fw: getAppFile('fw/hdt-nrf52840.hex'),
+        fwVersion: 'hdt-nrf52840',
+        fwIdAddress: 0x0,
+    },
+];
 
 export const deviceSetupConfig: DeviceSetupConfig = {
     deviceSetups: [
@@ -50,29 +278,10 @@ export const deviceSetupConfig: DeviceSetupConfig = {
                 !!d.usb &&
                 d.usb.device.descriptor.idProduct === 0xc00a,
         ),
-        jprogDeviceSetup(
-            [
-                // {
-                //    key: 'nrf52_family',
-                //    fw: getAppFile('fw/rssi-10040.hex'),
-                //    fwVersion: 'rssi-fw-1.0.0',
-                //    fwIdAddress: 0x2000,
-                // },
-                {
-                    key: 'PCA10156',
-                    fw: getAppFile('fw/hdt-nrf54l15.hex'),
-                    fwVersion: 'hdt-nrf54l15',
-                    fwIdAddress: 0x0,
-                },
-                {
-                    key: 'PCA10056',
-                    fw: getAppFile('fw/hdt-nrf52840.hex'),
-                    fwVersion: 'hdt-nrf52840',
-                    fwIdAddress: 0x0,
-                },
-            ],
+        jprogDeviceSetupWithHexTailVerify(
+            jprogFirmware,
             true,
-            true,
+            false,
         ),
     ],
 };
@@ -146,9 +355,9 @@ export const setupDeviceAndOpen =
 
         if (isNrf54Family || isNrf54Board) {
             logger.info(
-                'Detected nRF54-family device. Skipping firmware version check and offering to program blinky firmware.',
+                'Detected nRF54-family device. Verifying firmware before prompting for programming.',
             );
-            const checkCurrentFirmwareVersion = false;
+            const checkCurrentFirmwareVersion = true;
             const requireUserConfirmation = true;
 
             return dispatch(
@@ -215,6 +424,7 @@ export const setupDeviceAndOpen =
 export const recoverHex =
     (device: Device): AppThunk =>
     (dispatch, getState) => {
+        dispatch(markDeviceSetupAttemptStarted());
         getState().app.rssi.serialPort?.close(() => {
             dispatch(clearSerialPort());
             dispatch(
@@ -223,8 +433,23 @@ export const recoverHex =
                     deviceSetupConfig,
                     programmedDevice => {
                         dispatch(openDevice(programmedDevice));
+                        if (
+                            getState().app.rssi.didRunProgrammingInCurrentSetup
+                        ) {
+                            dispatch(
+                                openCompanionProgrammingPrompt(
+                                    programmedDevice.serialNumber ?? '',
+                                ),
+                            );
+                        }
+                        dispatch(clearDeviceSetupAttempt());
                     },
-                    () => {},
+                    reason => {
+                        if (reason) {
+                            logger.error('Device recovery/programming failed.', reason);
+                        }
+                        dispatch(clearDeviceSetupAttempt());
+                    },
                     undefined,
                     false,
                     false,
@@ -258,6 +483,7 @@ export const openCompanionProgrammingPrompt =
 
         // Show the companion programming prompt
         dispatch(showCompanionProgrammingPrompt({ mainSerial }));
+        dispatch(setIsCompanionProgrammingInProgress(false));
 
         // Set default selection: try last flashed companion if still connected, else first eligible
         const lastFlashed = getState().app.rssi.lastFlashedCompanionSerial;
@@ -270,7 +496,7 @@ export const openCompanionProgrammingPrompt =
     };
 
 export const confirmCompanionProgramming =
-    (): AppThunk => (dispatch, getState) => {
+    (): AppThunk => async (dispatch, getState) => {
         const state = getState().app.rssi;
         const selectedSerial = state.companionTargetSerial;
 
@@ -309,44 +535,118 @@ export const confirmCompanionProgramming =
             return;
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const programmingCallback = (result: any) => {
-            if (result?.serialNumber) {
-                logger.info(
-                    `Companion device (${result.serialNumber}) programmed successfully.`,
-                );
-                dispatch(setLastFlashedCompanionSerial(result.serialNumber));
-                dispatch(hideCompanionProgrammingPrompt());
-            }
-        };
-
-        const errorCallback = (reason?: unknown) => {
-            if (reason) {
-                logger.error('Companion device programming failed.', reason);
-            }
+        // Find the correct firmware hex for this board
+        const firmware = jprogFirmware.find(
+            fw => fw.key.toUpperCase() === board,
+        );
+        if (!firmware) {
             dispatch(
                 setCompanionProgrammingError(
-                    `Failed to program companion device: ${reason || 'unknown error'}`,
+                    `No firmware available for companion board ${board}.`,
                 ),
             );
-        };
+            return;
+        }
 
-        // Program the companion device with the same firmware setup config
-        // Set requireUserConfirmation to false since user already confirmed in companion dialog
-        dispatch(
-            prepareDevice(
-                selectedDevice,
-                deviceSetupConfig,
-                programmingCallback,
-                errorCallback,
-                undefined,
-                false,
-                false,
-            ),
-        );
+        dispatch(clearCompanionProgrammingError());
+        dispatch(setIsCompanionProgrammingInProgress(true));
+
+        try {
+            // Check companion device protection status directly
+            const protectionResult =
+                await NrfutilDeviceLib.getProtectionStatus(selectedDevice);
+            const isProtected =
+                protectionResult.protectionStatus !==
+                'NRFDL_PROTECTION_STATUS_NONE';
+
+            // HEX-tail check: skip programming if already running correct firmware
+            if (!isProtected) {
+                try {
+                    const tail = getHexTailSignature(firmware.fw);
+                    const read = await xRead(selectedDevice, {
+                        address: tail.startAddress,
+                        bytes: TAIL_COMPARE_BYTES,
+                        width: 8,
+                        direct: true,
+                    });
+                    const readHex = normalizeHex(
+                        parseReadIntelHexToBytes(read.intelHex)
+                            .map(byte =>
+                                byte.toString(16).padStart(2, '0'),
+                            )
+                            .join(''),
+                    );
+                    if (readHex === tail.bytesHex) {
+                        logger.info(
+                            `Companion device (${selectedSerial}) already has correct firmware — skipping programming.`,
+                        );
+                        dispatch(setIsCompanionProgrammingInProgress(false));
+                        dispatch(
+                            setLastFlashedCompanionSerial(selectedSerial),
+                        );
+                        dispatch(hideCompanionProgrammingPrompt());
+                        return;
+                    }
+                } catch {
+                    // xRead failed — proceed to program
+                }
+            }
+
+            const batch = NrfutilDeviceLib.batch();
+
+            if (isProtected) {
+                logger.info(
+                    `Companion device (${selectedSerial}) is protected — recovering.`,
+                );
+                batch.recover('Application', {
+                    onTaskBegin: () =>
+                        logger.info('Recovering companion device'),
+                    onTaskEnd: () =>
+                        logger.info('Finished recovering companion device.'),
+                    onException: () =>
+                        logger.error('Failed to recover companion device.'),
+                });
+            }
+
+            batch.program(firmware.fw, 'Application', undefined, undefined, {
+                onTaskBegin: () =>
+                    logger.info('Programming companion device'),
+                onTaskEnd: () =>
+                    logger.info('Finished programming companion device.'),
+                onException: () =>
+                    logger.error('Failed to program companion device.'),
+            });
+
+            batch.reset('Application', undefined, {
+                onTaskBegin: () =>
+                    logger.info('Resetting companion device'),
+                onTaskEnd: () =>
+                    logger.info('Finished resetting companion device.'),
+                onException: () =>
+                    logger.error('Failed to reset companion device.'),
+            });
+
+            await batch.run(selectedDevice);
+
+            logger.info(
+                `Companion device (${selectedSerial}) programmed successfully.`,
+            );
+            dispatch(setIsCompanionProgrammingInProgress(false));
+            dispatch(setLastFlashedCompanionSerial(selectedSerial));
+            dispatch(hideCompanionProgrammingPrompt());
+        } catch (error) {
+            logger.error('Companion device programming failed.', error);
+            dispatch(setIsCompanionProgrammingInProgress(false));
+            dispatch(
+                setCompanionProgrammingError(
+                    `Failed to program companion device: ${error || 'unknown error'}`,
+                ),
+            );
+        }
     };
 
 export const cancelCompanionProgramming = (): AppThunk => dispatch => {
     logger.info('Companion device programming cancelled by user');
+    dispatch(setIsCompanionProgrammingInProgress(false));
     dispatch(hideCompanionProgrammingPrompt());
 };

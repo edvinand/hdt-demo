@@ -10,6 +10,8 @@ import { useSelector } from 'react-redux';
 import { PHY_LABELS } from '../throughputDevice/phyLabels';
 import {
     getAppliedPhyEnabled,
+    getOneActivePhyEnabled,
+    getPhyEnabled,
     getPhyMaxThroughput,
     getPhyThroughput,
     getPhyUpdatedAt,
@@ -20,18 +22,98 @@ import ThroughputGauge from './ThroughputGauge';
 // Per-PHY theoretical maximum kbps (same as in Chart.tsx)
 const PHY_MAX_KBPS = [7500, 6000, 4000, 3000, 2000, 2000, 1000];
 
+interface ProgressBarProps {
+    progress: number;
+    elapsedMs: number;
+    bestCompletedMs: number;
+    fileSizeMb: number;
+    maxWidth?: number;
+}
+
+const ProgressBar = ({
+    progress,
+    elapsedMs,
+    bestCompletedMs,
+    fileSizeMb,
+    maxWidth,
+}: ProgressBarProps) => {
+    const clamped = Math.max(0, Math.min(100, progress));
+    const totalSec = Math.floor(elapsedMs / 1000);
+    const timeLabel = `${String(Math.floor(totalSec / 60)).padStart(2, '0')}:${String(totalSec % 60).padStart(2, '0')}`;
+    const bestSec = Math.floor(bestCompletedMs / 1000);
+    const bestLabel = `${String(Math.floor(bestSec / 60)).padStart(2, '0')}:${String(bestSec % 60).padStart(2, '0')}`;
+
+    return (
+        <div style={{ width: '100%', maxWidth, marginTop: 16, fontFamily: 'Roboto, "Segoe UI", sans-serif' }}>
+            <div
+                style={{
+                    position: 'relative',
+                    height: 8,
+                    borderRadius: 4,
+                    background: '#d0d0d0',
+                    overflow: 'hidden',
+                }}
+            >
+                <div
+                    style={{
+                        position: 'absolute',
+                        left: 0,
+                        top: 0,
+                        height: '100%',
+                        width: `${clamped}%`,
+                        background: '#0077c8',
+                        borderRadius: 4,
+                        transition: 'width 0.1s linear',
+                    }}
+                />
+            </div>
+            <div
+                style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: 11,
+                    marginTop: 3,
+                    color: '#333',
+                    opacity: 0.8,
+                }}
+            >
+                <span>{Math.round(clamped)}% of {fileSizeMb} MB ({timeLabel})</span>
+                {bestCompletedMs > 0 && <span>Best: {bestLabel}</span>}
+            </div>
+        </div>
+    );
+};
+
 interface GaugeViewProps {
     /** Rendered above gauges when only a single PHY is active */
     singlePhyTopContent?: React.ReactNode;
+    fileTransferProgress?: number[];
+    fileTransferElapsedMs?: number[];
+    bestCompletedElapsedMs?: number[];
+    virtualFileSizeMb?: number;
+    enableProgressBars?: boolean;
 }
 
-const GaugeView = ({ singlePhyTopContent }: GaugeViewProps) => {
+const GaugeView = ({
+    singlePhyTopContent,
+    fileTransferProgress = [],
+    fileTransferElapsedMs = [],
+    bestCompletedElapsedMs = [],
+    virtualFileSizeMb = 100,
+    enableProgressBars = true,
+}: GaugeViewProps) => {
     const appliedPhyEnabled = useSelector(getAppliedPhyEnabled);
+    const configuredPhyEnabled = useSelector(getPhyEnabled);
+    const oneActivePhyEnabled = useSelector(getOneActivePhyEnabled);
     const phyThroughput = useSelector(getPhyThroughput);
     const phyMaxThroughput = useSelector(getPhyMaxThroughput);
     const phyUpdatedAt = useSelector(getPhyUpdatedAt);
 
-    const enabledIndices = appliedPhyEnabled
+    const displayedPhyEnabled = oneActivePhyEnabled
+        ? configuredPhyEnabled
+        : appliedPhyEnabled;
+
+    const enabledIndices = displayedPhyEnabled
         .map((enabled, index) => (enabled ? index : -1))
         .filter(index => index >= 0);
 
@@ -65,19 +147,32 @@ const GaugeView = ({ singlePhyTopContent }: GaugeViewProps) => {
                         flex: '1 1 auto',
                         minHeight: 0,
                         display: 'flex',
+                        flexDirection: 'column',
                         justifyContent: 'center',
                         alignItems: 'center',
+                        padding: '0 24px',
                     }}
                 >
-                    <ThroughputGauge
-                        currentKbps={phyThroughput[phyIdx] ?? 0}
-                        maxRecordedKbps={phyMaxThroughput[phyIdx] ?? 0}
-                        capacityKbps={PHY_MAX_KBPS[phyIdx] ?? 1000}
-                        maxSharedCapacityKbps={maxSharedCapacity}
-                        phyLabel={PHY_LABELS[phyIdx]}
-                        isHighlighted={phyIdx === lastUpdatedIndex}
-                        size="large"
-                    />
+                    <div style={{ width: '100%', maxWidth: 320, aspectRatio: '1' }}>
+                        <ThroughputGauge
+                            currentKbps={phyThroughput[phyIdx] ?? 0}
+                            maxRecordedKbps={phyMaxThroughput[phyIdx] ?? 0}
+                            capacityKbps={PHY_MAX_KBPS[phyIdx] ?? 1000}
+                            maxSharedCapacityKbps={maxSharedCapacity}
+                            phyLabel={PHY_LABELS[phyIdx]}
+                            isHighlighted={phyIdx === lastUpdatedIndex}
+                            size="large"
+                        />
+                    </div>
+                        {enableProgressBars && (
+                            <ProgressBar
+                                progress={fileTransferProgress[phyIdx] ?? 0}
+                                elapsedMs={fileTransferElapsedMs[phyIdx] ?? 0}
+                                bestCompletedMs={bestCompletedElapsedMs[phyIdx] ?? 0}
+                                fileSizeMb={virtualFileSizeMb}
+                                maxWidth={320}
+                            />
+                        )}
                 </div>
             </div>
         );
@@ -106,20 +201,32 @@ const GaugeView = ({ singlePhyTopContent }: GaugeViewProps) => {
                 borderRadius: 8,
                 padding: 16,
                 display: 'flex',
+                flexDirection: 'column',
                 justifyContent: 'center',
                 alignItems: 'center',
                 flex: '1 1 0',
                 minWidth: 0,
             }}
         >
-            <ThroughputGauge
-                currentKbps={phyThroughput[phyIdx] ?? 0}
-                maxRecordedKbps={phyMaxThroughput[phyIdx] ?? 0}
-                maxSharedCapacityKbps={maxSharedCapacity}
-                capacityKbps={PHY_MAX_KBPS[phyIdx] ?? 1000}
-                phyLabel={PHY_LABELS[phyIdx]}
-                isHighlighted={phyIdx === lastUpdatedIndex}
-            />
+            <div style={{ width: '100%', maxWidth: 220, aspectRatio: '1' }}>
+                <ThroughputGauge
+                    currentKbps={phyThroughput[phyIdx] ?? 0}
+                    maxRecordedKbps={phyMaxThroughput[phyIdx] ?? 0}
+                    maxSharedCapacityKbps={maxSharedCapacity}
+                    capacityKbps={PHY_MAX_KBPS[phyIdx] ?? 1000}
+                    phyLabel={PHY_LABELS[phyIdx]}
+                    isHighlighted={phyIdx === lastUpdatedIndex}
+                />
+            </div>
+            {enableProgressBars && (
+                <ProgressBar
+                    progress={fileTransferProgress[phyIdx] ?? 0}
+                    elapsedMs={fileTransferElapsedMs[phyIdx] ?? 0}
+                    bestCompletedMs={bestCompletedElapsedMs[phyIdx] ?? 0}
+                    fileSizeMb={virtualFileSizeMb}
+                    maxWidth={220}
+                />
+            )}
         </div>
     );
 

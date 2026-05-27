@@ -140,6 +140,7 @@ const ThroughputGauge = ({
         >
             <svg
                 viewBox={`0 0 ${viewSize} ${viewSize}`}
+                overflow="visible"
                 style={{
                     width: '100%',
                     height: '100%',
@@ -229,10 +230,23 @@ const ThroughputGauge = ({
                     fontSize={size === 'large' ? 16 : 13}
                     fontWeight="bold"
                     fontFamily='Roboto, "Segoe UI", sans-serif'
+                    opacity={0}
                 >
                     {phyLabel}
                 </text>
             </svg>
+            <div
+                style={{
+                    textAlign: 'center',
+                    fontFamily: 'Roboto, "Segoe UI", sans-serif',
+                    fontSize: size === 'large' ? 16 : 13,
+                    fontWeight: 'bold',
+                    color: color.label,
+                    marginTop: 4,
+                }}
+            >
+                {phyLabel}
+            </div>
         </div>
     );
 };

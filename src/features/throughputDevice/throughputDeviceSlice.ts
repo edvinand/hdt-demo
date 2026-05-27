@@ -33,6 +33,11 @@ interface RssiState {
     pendingEnableUartTerminal: boolean;
     enableProgressBars: boolean;
     pendingEnableProgressBars: boolean;
+    oneActivePhyEnabled: boolean;
+    pendingOneActivePhyEnabled: boolean;
+    oneActivePhySequenceMask: boolean[];
+    oneActivePhyCurrentIndex: number;
+    oneActivePhySequenceActive: boolean;
     isPhyFrozen: boolean;
     noDataReceived: boolean;
     phyEnabled: boolean[];
@@ -50,6 +55,8 @@ interface RssiState {
     mainProgrammedSerial?: string;
     companionTargetSerial?: string;
     companionProgrammingError?: string;
+    companionProgrammingStatus?: string;
+    isCompanionProgrammingInProgress: boolean;
     lastFlashedCompanionSerial?: string;
     showStartupDialog: boolean;
 }
@@ -70,6 +77,11 @@ const initialState: RssiState = {
     pendingEnableUartTerminal: false,
     enableProgressBars: true,
     pendingEnableProgressBars: true,
+    oneActivePhyEnabled: false,
+    pendingOneActivePhyEnabled: false,
+    oneActivePhySequenceMask: [false, false, false, false, false, false, false],
+    oneActivePhyCurrentIndex: -1,
+    oneActivePhySequenceActive: false,
     isPhyFrozen: false,
     noDataReceived: false,
     phyEnabled: [false, false, false, false, false, true, true],
@@ -83,6 +95,7 @@ const initialState: RssiState = {
     didRunProgrammingInCurrentSetup: false,
     showCompanionProgrammingPrompt: false,
     companionTargetSerial: 'none',
+    isCompanionProgrammingInProgress: false,
     showStartupDialog: getInitialShowStartupDialog(),
 };
 
@@ -107,6 +120,10 @@ const rssiSlice = createSlice({
 
         toggleIsPaused: state => {
             state.isPaused = !state.isPaused;
+        },
+
+        setIsPaused: (state, action: PayloadAction<boolean>) => {
+            state.isPaused = action.payload;
         },
 
         clearRssiData: state => {
@@ -142,6 +159,13 @@ const rssiSlice = createSlice({
             state.enableProgressBars = initialState.enableProgressBars;
             state.pendingEnableProgressBars =
                 initialState.pendingEnableProgressBars;
+            state.oneActivePhyEnabled = initialState.oneActivePhyEnabled;
+            state.pendingOneActivePhyEnabled =
+                initialState.pendingOneActivePhyEnabled;
+            state.oneActivePhySequenceMask =
+                initialState.oneActivePhySequenceMask.map(() => false);
+            state.oneActivePhyCurrentIndex = -1;
+            state.oneActivePhySequenceActive = false;
         },
 
         applyCurrentPhyEnabled: state => {
@@ -195,6 +219,72 @@ const rssiSlice = createSlice({
 
         applyEnableProgressBars: state => {
             state.enableProgressBars = state.pendingEnableProgressBars;
+        },
+
+        setOneActivePhyEnabled: (state, action: PayloadAction<boolean>) => {
+            state.pendingOneActivePhyEnabled = action.payload;
+        },
+
+        applyOneActivePhyEnabled: state => {
+            state.oneActivePhyEnabled = state.pendingOneActivePhyEnabled;
+        },
+
+        initializeOneActivePhySequence: (
+            state,
+            action: PayloadAction<boolean[]>,
+        ) => {
+            const sequenceMask = [...action.payload];
+            state.oneActivePhySequenceMask = sequenceMask;
+
+            const firstActiveIndex = sequenceMask.findIndex(enabled => enabled);
+            if (firstActiveIndex < 0) {
+                state.oneActivePhyCurrentIndex = -1;
+                state.oneActivePhySequenceActive = false;
+                state.appliedPhyEnabled = sequenceMask.map(() => false);
+                return;
+            }
+
+            state.oneActivePhyCurrentIndex = firstActiveIndex;
+            state.oneActivePhySequenceActive = true;
+            state.appliedPhyEnabled = sequenceMask.map(
+                (enabled, index) => enabled && index === firstActiveIndex,
+            );
+            state.fileTransferResetTrigger += 1;
+        },
+
+        advanceOneActivePhySequence: state => {
+            if (!state.oneActivePhySequenceActive) {
+                return;
+            }
+
+            const activeIndices = state.oneActivePhySequenceMask
+                .map((enabled, index) => (enabled ? index : -1))
+                .filter(index => index >= 0);
+
+            if (activeIndices.length === 0) {
+                state.oneActivePhyCurrentIndex = -1;
+                state.oneActivePhySequenceActive = false;
+                return;
+            }
+
+            const currentPos = activeIndices.indexOf(
+                state.oneActivePhyCurrentIndex,
+            );
+            const nextPos = currentPos < 0 ? 0 : (currentPos + 1) % activeIndices.length;
+            const nextIndex = activeIndices[nextPos];
+
+            state.oneActivePhyCurrentIndex = nextIndex;
+            state.appliedPhyEnabled = state.oneActivePhySequenceMask.map(
+                (enabled, index) => enabled && index === nextIndex,
+            );
+        },
+
+        clearOneActivePhySequence: state => {
+            state.oneActivePhySequenceMask = state.oneActivePhySequenceMask.map(
+                () => false,
+            );
+            state.oneActivePhyCurrentIndex = -1;
+            state.oneActivePhySequenceActive = false;
         },
 
         setIsPhyFrozen: (state, action: PayloadAction<boolean>) => {
@@ -285,6 +375,8 @@ const rssiSlice = createSlice({
         ) => {
             state.showCompanionProgrammingPrompt = true;
             state.mainProgrammedSerial = action.payload.mainSerial;
+            state.companionProgrammingStatus = undefined;
+            state.isCompanionProgrammingInProgress = false;
         },
 
         hideCompanionProgrammingPrompt: state => {
@@ -292,6 +384,8 @@ const rssiSlice = createSlice({
             state.mainProgrammedSerial = undefined;
             state.companionTargetSerial = 'none';
             state.companionProgrammingError = undefined;
+            state.companionProgrammingStatus = undefined;
+            state.isCompanionProgrammingInProgress = false;
         },
 
         setCompanionTargetSerial: (state, action: PayloadAction<string>) => {
@@ -304,6 +398,25 @@ const rssiSlice = createSlice({
             action: PayloadAction<string>,
         ) => {
             state.companionProgrammingError = action.payload;
+            state.isCompanionProgrammingInProgress = false;
+        },
+
+        clearCompanionProgrammingError: state => {
+            state.companionProgrammingError = undefined;
+        },
+
+        setCompanionProgrammingStatus: (
+            state,
+            action: PayloadAction<string | undefined>,
+        ) => {
+            state.companionProgrammingStatus = action.payload;
+        },
+
+        setIsCompanionProgrammingInProgress: (
+            state,
+            action: PayloadAction<boolean>,
+        ) => {
+            state.isCompanionProgrammingInProgress = action.payload;
         },
 
         setLastFlashedCompanionSerial: (
@@ -370,6 +483,16 @@ export const getEnableProgressBars = (state: RootState) =>
     state.app.rssi.enableProgressBars;
 export const getPendingEnableProgressBars = (state: RootState) =>
     state.app.rssi.pendingEnableProgressBars;
+export const getOneActivePhyEnabled = (state: RootState) =>
+    state.app.rssi.oneActivePhyEnabled;
+export const getPendingOneActivePhyEnabled = (state: RootState) =>
+    state.app.rssi.pendingOneActivePhyEnabled;
+export const getOneActivePhySequenceMask = (state: RootState) =>
+    state.app.rssi.oneActivePhySequenceMask;
+export const getOneActivePhyCurrentIndex = (state: RootState) =>
+    state.app.rssi.oneActivePhyCurrentIndex;
+export const getOneActivePhySequenceActive = (state: RootState) =>
+    state.app.rssi.oneActivePhySequenceActive;
 export const getIsPhyFrozen = (state: RootState) => state.app.rssi.isPhyFrozen;
 
 export const getNoDataReceived = (state: RootState) =>
@@ -396,6 +519,10 @@ export const getCompanionTargetSerial = (state: RootState) =>
     state.app.rssi.companionTargetSerial;
 export const getCompanionProgrammingError = (state: RootState) =>
     state.app.rssi.companionProgrammingError;
+export const getCompanionProgrammingStatus = (state: RootState) =>
+    state.app.rssi.companionProgrammingStatus;
+export const getIsCompanionProgrammingInProgress = (state: RootState) =>
+    state.app.rssi.isCompanionProgrammingInProgress;
 export const getLastFlashedCompanionSerial = (state: RootState) =>
     state.app.rssi.lastFlashedCompanionSerial;
 export const getDidRunProgrammingInCurrentSetup = (state: RootState) =>
@@ -406,6 +533,7 @@ export const {
     setRssiDevice,
     clearSerialPort,
     toggleIsPaused,
+    setIsPaused,
     resetRssiStore,
     clearRssiData,
     setDelay,
@@ -420,6 +548,11 @@ export const {
     applyEnableUartTerminal,
     setEnableProgressBars,
     applyEnableProgressBars,
+    setOneActivePhyEnabled,
+    applyOneActivePhyEnabled,
+    initializeOneActivePhySequence,
+    advanceOneActivePhySequence,
+    clearOneActivePhySequence,
     setIsPhyFrozen,
     resetIsPhyFrozen,
     setPhyEnabled,
@@ -433,6 +566,9 @@ export const {
     hideCompanionProgrammingPrompt,
     setCompanionTargetSerial,
     setCompanionProgrammingError,
+    clearCompanionProgrammingError,
+    setCompanionProgrammingStatus,
+    setIsCompanionProgrammingInProgress,
     setLastFlashedCompanionSerial,
     markDeviceSetupAttemptStarted,
     clearDeviceSetupAttempt,

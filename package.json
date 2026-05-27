@@ -1,7 +1,7 @@
 {
     "name": "hdt-demo",
-    "version": "0.1.0",
-    "displayName": "HDT Demo",
+    "version": "0.2.0",
+    "displayName": "Bluetooth HDT Demo",
     "description": "Live Visualization of High Data Throughput",
     "homepage": "https://github.com/NordicSemiconductor/pc-nrfconnect-rssi",
     "repository": {

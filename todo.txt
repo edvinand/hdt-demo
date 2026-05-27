@@ -56,16 +56,16 @@ Bytt ut svart strek i gauge med hvit gap
 
 21/05:
 
-- Set up new branch
-- Toggle LED: 2 buttons. One to toggle serial connected device, one to toggle remote device. Both should be under "Advanced", or even "debug". Add tooltip (mouseOver).
-- Wait on 100% until all are completed, then reset the progress
-- Packet size: N "Bytes"
-- One by one PHY (option in "advanced")
-- "PHY Datarate" instead of "Peak Throughput"
+x Set up new branch
+x Toggle LED: 2 buttons. One to toggle serial connected device, one to toggle remote device. Both should be under "Advanced", or even "debug". Add tooltip (mouseOver).
+x Wait on 100% until all are completed, then reset the progress
+x Packet size: N "Bytes"
+x One by one PHY (option in "advanced")
+x "PHY Datarate" instead of "Peak Throughput"
 - Explain something about connection parameters 
-- Name: HDT Demo -> Bluetooth HDT Demo
-- Start/stop/reset
-- Check if the device is already programmed
+x Name: HDT Demo -> Bluetooth HDT Demo
+x Start/stop/reset
+x Check if the device is already programmed
 - Are you sure you want to program (companion device)
-- File transfer in gauge view
+x File transfer in gauge view
 

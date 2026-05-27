@@ -9,6 +9,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import {
     Button,
     NumberInput,
+    Overlay,
     Toggle,
 } from '@nordicsemiconductor/pc-nrfconnect-shared';
 
@@ -18,6 +19,7 @@ import {
     getIsPhyFrozen,
     getPacketSizeBytes,
     getPendingEnableGraphOnSinglePhy,
+    getPendingOneActivePhyEnabled,
     getPendingEnableProgressBars,
     getPendingEnableUartTerminal,
     getPendingVirtualFileSizeMb,
@@ -26,10 +28,12 @@ import {
     setEnableGraphOnSinglePhy,
     setEnableProgressBars,
     setEnableUartTerminal,
+    setOneActivePhyEnabled,
     setIsPhyFrozen,
     setPacketSizeBytes,
     setPendingVirtualFileSizeMb,
 } from '../../features/throughputDevice/throughputDeviceSlice';
+import ToggleLed from './ToggleLed';
 
 const clamp = (value: number, min: number, max: number) =>
     Math.max(min, Math.min(max, value));
@@ -48,6 +52,7 @@ export default () => {
     const enableGraphOnSinglePhy = useSelector(
         getPendingEnableGraphOnSinglePhy,
     );
+    const oneActivePhyEnabled = useSelector(getPendingOneActivePhyEnabled);
     const enableProgressBars = useSelector(getPendingEnableProgressBars);
     const enableUartTerminal = useSelector(getPendingEnableUartTerminal);
     const [isFreezeCommandInFlight, setIsFreezeCommandInFlight] =
@@ -96,6 +101,13 @@ export default () => {
         [dispatch],
     );
 
+    const setOneActivePhy = useCallback(
+        (enabled: boolean) => {
+            dispatch(setOneActivePhyEnabled(enabled));
+        },
+        [dispatch],
+    );
+
     const onToggleFreezePhy = useCallback(async () => {
         if (!rssiDevice || isFreezeCommandInFlight) return;
 
@@ -115,15 +127,28 @@ export default () => {
 
     return (
         <>
-            <NumberInput
-                showSlider
-                minWidth
-                range={{ min: 1, max: 100 }}
-                value={pendingVirtualFileSizeMb}
-                onChange={setFileSize}
-                label="Virtual file size"
-                unit="MB"
-            />
+            <Overlay
+                tooltipId="virtual-file-size-tooltip"
+                tooltipChildren={
+                    <p>
+                        The size of the virtual file that is being transferred.
+                        This is not actually a file being transferred, but used
+                        as a measurement to see how long it would take to
+                        transfer a file of this size.
+                    </p>
+                }
+                placement="right"
+            >
+                <NumberInput
+                    showSlider
+                    minWidth
+                    range={{ min: 1, max: 100 }}
+                    value={pendingVirtualFileSizeMb}
+                    onChange={setFileSize}
+                    label="Virtual file size"
+                    unit="MB"
+                />
+            </Overlay>
             <NumberInput
                 showSlider
                 minWidth
@@ -133,50 +158,127 @@ export default () => {
                 label="Connection interval"
                 unit="ms"
             />
-            <NumberInput
-                showSlider
-                minWidth
-                range={{ min: 23, max: 247 }}
-                value={packetSizeBytes}
-                onChange={setPacketSize}
-                label="Packet size"
-                unit="Byte"
-            />
+            <Overlay
+                tooltipId="packet-size-tooltip"
+                tooltipChildren={
+                    <p>
+                        The size of the payload packets. The actual MTU is
+                        fixed in this demo.
+                    </p>
+                }
+                placement="right"
+            >
+                <NumberInput
+                    showSlider
+                    minWidth
+                    range={{ min: 23, max: 247 }}
+                    value={packetSizeBytes}
+                    onChange={setPacketSize}
+                    label="Packet size"
+                    unit="Bytes"
+                />
+            </Overlay>
             <div className="tw-mt-2">
-                <Toggle
-                    isToggled={enableGraphOnSinglePhy}
-                    onToggle={setEnableGraph}
+                <Overlay
+                    tooltipId="enable-graph-tooltip"
+                    tooltipChildren={
+                        <p>
+                            When only one PHY is active, you can see the
+                            throughput history plotted in a graph.
+                        </p>
+                    }
+                    placement="right"
                 >
-                    Enable graph on single PHY
-                </Toggle>
+                    <Toggle
+                        isToggled={enableGraphOnSinglePhy}
+                        onToggle={setEnableGraph}
+                    >
+                        Enable graph on single PHY
+                    </Toggle>
+                </Overlay>
             </div>
             <div className="tw-mt-2">
-                <Toggle
-                    isToggled={enableUartTerminal}
-                    onToggle={setEnableTerminal}
+                <Overlay
+                    tooltipId="enable-progress-tooltip"
+                    tooltipChildren={
+                        <p>
+                            Show the transfer of the virtual file in
+                            realtime.
+                        </p>
+                    }
+                    placement="right"
                 >
-                    Enable UART terminal
-                </Toggle>
+                    <Toggle
+                        isToggled={enableProgressBars}
+                        onToggle={setEnableProgress}
+                    >
+                        Enable progress bars
+                    </Toggle>
+                </Overlay>
             </div>
             <div className="tw-mt-2">
-                <Toggle
-                    isToggled={enableProgressBars}
-                    onToggle={setEnableProgress}
+                <Overlay
+                    tooltipId="one-active-phy-tooltip"
+                    tooltipChildren={
+                        <p>
+                            When enabled, the device will remain on a single
+                            PHY until the entire virtual file is transferred
+                            before moving on to the next active PHY.
+                        </p>
+                    }
+                    placement="right"
                 >
-                    Enable progress bars
-                </Toggle>
+                    <Toggle
+                        isToggled={oneActivePhyEnabled}
+                        onToggle={setOneActivePhy}
+                    >
+                        One active PHY
+                    </Toggle>
+                </Overlay>
             </div>
             <div className="tw-mt-2">
-                <Button
-                    variant="secondary"
-                    className="w-100"
-                    disabled={!isConnected || isFreezeCommandInFlight}
-                    onClick={() => {
-                        onToggleFreezePhy();
-                    }}
+                <Overlay
+                    tooltipId="enable-uart-tooltip"
+                    tooltipChildren={
+                        <p>
+                            Show UART terminal. Used for debugging.
+                        </p>
+                    }
+                    placement="right"
                 >
-                    {isPhyFrozen ? 'Unfreeze PHY' : 'Freeze PHY'}
-                </Button>
+                    <Toggle
+                        isToggled={enableUartTerminal}
+                        onToggle={setEnableTerminal}
+                    >
+                        Enable UART terminal
+                    </Toggle>
+                </Overlay>
+            </div>
+            <div className="tw-mt-2">
+                <Overlay
+                    tooltipId="freeze-phy-tooltip"
+                    tooltipChildren={
+                        <p>
+                            The demo will continue, but it will remain on the
+                            currently active PHY until you unfreeze.
+                        </p>
+                    }
+                    placement="right"
+                >
+                    <Button
+                        variant="secondary"
+                        className="w-100"
+                        disabled={!isConnected || isFreezeCommandInFlight}
+                        onClick={() => {
+                            onToggleFreezePhy();
+                        }}
+                    >
+                        {isPhyFrozen ? 'Unfreeze PHY' : 'Freeze PHY'}
+                    </Button>
+                </Overlay>
+            </div>
+            <div className="tw-mt-2">
+                <ToggleLed />
             </div>
         </>
     );

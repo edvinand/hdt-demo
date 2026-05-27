@@ -1,4 +1,4 @@
-# HDT demo app
+# Bluetooth HDT Demo app
 
 ## Installation
 
@@ -28,9 +28,9 @@ https://nordicsemiconductor.github.io/pc-nrfconnect-docs/
 ## Embedded firmware
 
 The firmware that is programmed onto the nRF54L15DK is found in the fw folder.
-It is currently built using NCS v3.2.1. To replace the file that is programmed
+It is currently built using NCS v3.2.2. To replace the file that is programmed
 onto the nRF54L15DK, please copy the .hex file into the "fw" folder, and rename
-it blinky-10156.hex.
+it hdt-nrf54l15.hex.
 
 ## License
 

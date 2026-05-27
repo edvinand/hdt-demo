@@ -9,6 +9,7 @@ import { useDispatch } from 'react-redux';
 import {
     Button,
     Group,
+    Overlay,
     SidePanel,
 } from '@nordicsemiconductor/pc-nrfconnect-shared';
 
@@ -19,7 +20,6 @@ import ConfigPhySelector from './ConfigPhySelector';
 import ControlButtons, { WriteConfigButton } from './ControlButtons';
 import Delay from './Delay';
 import DisplayTypeSelector from './DisplayTypeSelector';
-import ToggleLed from './ToggleLed';
 
 export default () => {
     useThroughputDevice();
@@ -43,12 +43,6 @@ export default () => {
                     </div>
 
                     <div className="tw-mt-4">
-                        <Group heading="Device">
-                            <ToggleLed />
-                        </Group>
-                    </div>
-
-                    <div className="tw-mt-4">
                         <Group heading="Advanced" collapsible defaultCollapsed>
                             <Advanced />
                         </Group>
@@ -63,18 +57,24 @@ export default () => {
                 </div>
 
                 <div className="hdt-side-panel-help tw-mt-auto tw-pt-3">
-                    <Button
-                        variant="secondary"
-                        className="w-100"
-                        onClick={() => {
-                            localStorage.removeItem(
-                                'hdt-demo.startup-dialog-dismissed',
-                            );
-                            dispatch(showStartupDialog());
-                        }}
+                    <Overlay
+                        tooltipId="help-button-tooltip"
+                        tooltipChildren={<p>Show Demo instructions.</p>}
+                        placement="right"
                     >
-                        Help
-                    </Button>
+                        <Button
+                            variant="secondary"
+                            className="w-100"
+                            onClick={() => {
+                                localStorage.removeItem(
+                                    'hdt-demo.startup-dialog-dismissed',
+                                );
+                                dispatch(showStartupDialog());
+                            }}
+                        >
+                            Help
+                        </Button>
+                    </Overlay>
                 </div>
             </div>
         </SidePanel>

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: LicenseRef-Nordic-4-Clause
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
     Button,
@@ -15,18 +15,26 @@ import {
 import {
     applyCurrentPhyEnabled,
     applyEnableGraphOnSinglePhy,
+    applyOneActivePhyEnabled,
     applyEnableProgressBars,
     applyEnableUartTerminal,
     applyVirtualFileSizeMb,
+    clearOneActivePhySequence,
+    getAppliedPhyEnabled,
     getConnectionIntervalUnits,
     getDelay,
     getIsConnected,
+    getOneActivePhyCurrentIndex,
+    getOneActivePhySequenceActive,
+    getPendingOneActivePhyEnabled,
     getPacketSizeBytes,
     getPendingVirtualFileSizeMb,
     getPhyEnabled,
     getRssiDevice,
     getVirtualFileSizeMb,
+    initializeOneActivePhySequence,
     loadDefaultConfig,
+    setIsPaused,
 } from '../../features/throughputDevice/throughputDeviceSlice';
 
 export default () => {
@@ -59,9 +67,17 @@ export const WriteConfigButton = () => {
     const pendingVirtualFileSizeMb = useSelector(getPendingVirtualFileSizeMb);
     const connectionIntervalUnits = useSelector(getConnectionIntervalUnits);
     const packetSizeBytes = useSelector(getPacketSizeBytes);
+    const pendingOneActivePhyEnabled = useSelector(
+        getPendingOneActivePhyEnabled,
+    );
+    const appliedPhyEnabled = useSelector(getAppliedPhyEnabled);
+    const oneActivePhyCurrentIndex = useSelector(getOneActivePhyCurrentIndex);
+    const oneActivePhySequenceActive = useSelector(getOneActivePhySequenceActive);
     const rssiDevice = useSelector(getRssiDevice);
     const device = useSelector(selectedDevice);
     const dispatch = useDispatch();
+    const [hasStarted, setHasStarted] = useState(false);
+    const [wasStopped, setWasStopped] = useState(false);
 
     const isPca10056 =
         device?.devkit?.boardVersion?.toUpperCase() === 'PCA10056';
@@ -73,45 +89,106 @@ export const WriteConfigButton = () => {
             isPca10056 && i < 5 ? false : v,
         );
 
+        const firstActivePhyIndex = effectivePhyEnabled.findIndex(
+            enabled => enabled,
+        );
+        const oneActiveStartMask = effectivePhyEnabled.map(
+            (enabled, index) => enabled && index === firstActivePhyIndex,
+        );
+
+        const shouldResumeOneActiveSequence =
+            pendingOneActivePhyEnabled &&
+            wasStopped &&
+            oneActivePhySequenceActive &&
+            oneActivePhyCurrentIndex >= 0;
+
+        const phyMaskForWrite = pendingOneActivePhyEnabled
+            ? shouldResumeOneActiveSequence
+                ? appliedPhyEnabled
+                : oneActiveStartMask
+            : effectivePhyEnabled;
+
+        dispatch(setIsPaused(false));
         dispatch(applyVirtualFileSizeMb());
         dispatch(applyEnableGraphOnSinglePhy());
         dispatch(applyEnableProgressBars());
         dispatch(applyEnableUartTerminal());
+        dispatch(applyOneActivePhyEnabled());
+
+        if (pendingOneActivePhyEnabled) {
+            if (!shouldResumeOneActiveSequence) {
+                dispatch(initializeOneActivePhySequence(effectivePhyEnabled));
+            }
+        } else {
+            dispatch(clearOneActivePhySequence());
+            dispatch(applyCurrentPhyEnabled());
+        }
+
         rssiDevice?.writeConfig({
             delay,
-            phyEnabled: effectivePhyEnabled,
+            phyEnabled: phyMaskForWrite,
             virtualFileSizeMb: pendingVirtualFileSizeMb,
             connectionIntervalUnits,
             packetSizeBytes,
         });
-        dispatch(applyCurrentPhyEnabled());
+
+        setHasStarted(true);
+        setWasStopped(false);
     }, [
+        appliedPhyEnabled,
+        connectionIntervalUnits,
         delay,
         dispatch,
         isConnected,
         isPca10056,
+        oneActivePhyCurrentIndex,
+        oneActivePhySequenceActive,
+        packetSizeBytes,
+        pendingOneActivePhyEnabled,
+        pendingVirtualFileSizeMb,
         phyEnabled,
         rssiDevice,
-        pendingVirtualFileSizeMb,
-        connectionIntervalUnits,
-        packetSizeBytes,
+        wasStopped,
     ]);
+
+    const stopAndFreeze = useCallback(() => {
+        dispatch(setIsPaused(true));
+        setWasStopped(true);
+    }, [dispatch]);
+
+    const startButtonLabel = !hasStarted
+        ? 'Start'
+                : wasStopped
+                    ? 'Start'
+                    : 'Restart';
 
     useHotKey({
         hotKey: 'alt+w',
-        title: 'Write config',
+        title: 'Start or restart',
         isGlobal: false,
         action: () => writeConfig(),
     });
 
     return (
-        <Button
-            variant="primary"
-            className="w-100"
-            disabled={!isConnected}
-            onClick={writeConfig}
-        >
-            Write config
-        </Button>
+        <>
+            <Button
+                variant="primary"
+                className="w-100"
+                disabled={!isConnected}
+                onClick={writeConfig}
+            >
+                {startButtonLabel}
+            </Button>
+            {hasStarted && !wasStopped && (
+                <Button
+                    variant="secondary"
+                    className="w-100 tw-mt-2"
+                    disabled={!isConnected}
+                    onClick={stopAndFreeze}
+                >
+                    Stop
+                </Button>
+            )}
+        </>
     );
 };
