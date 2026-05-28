@@ -18,7 +18,6 @@ import useThroughputDevice from '../../features/throughputDevice/useThroughputDe
 import Advanced from './Advanced';
 import ConfigPhySelector from './ConfigPhySelector';
 import ControlButtons, { WriteConfigButton } from './ControlButtons';
-import Delay from './Delay';
 import DisplayTypeSelector from './DisplayTypeSelector';
 
 export default () => {
@@ -38,7 +37,6 @@ export default () => {
                     <div className="tw-mt-4">
                         <Group heading="SELECTED PHYS">
                             <ConfigPhySelector />
-                            <Delay />
                         </Group>
                     </div>
 

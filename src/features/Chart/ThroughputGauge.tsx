@@ -41,6 +41,8 @@ const describeArc = (
 interface ThroughputGaugeProps {
     currentKbps: number;
     maxRecordedKbps: number;
+    avgKbps?: number;
+    showAvg?: boolean;
     capacityKbps: number;
     maxSharedCapacityKbps?: number; // Shared scale across all gauges (defaults to capacityKbps if not provided)
     phyLabel: string;
@@ -51,6 +53,8 @@ interface ThroughputGaugeProps {
 const ThroughputGauge = ({
     currentKbps,
     maxRecordedKbps,
+    avgKbps = 0,
+    showAvg = true,
     capacityKbps,
     maxSharedCapacityKbps,
     phyLabel,
@@ -192,10 +196,10 @@ const ThroughputGauge = ({
                     />
                 )}
 
-                {/* Center text: value / max kbps */}
+                {/* Center text: value/max on first line, average on second */}
                 <text
                     x={cx}
-                    y={cy - 6}
+                    y={cy - 12}
                     textAnchor="middle"
                     dominantBaseline="central"
                     fill={color.label}
@@ -205,11 +209,25 @@ const ThroughputGauge = ({
                 >
                     {currentKbps} / {maxRecordedKbps} kbps
                 </text>
+                {showAvg && (
+                    <text
+                        x={cx}
+                        y={cy + 8}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        fill={color.label}
+                        fontSize={valueFontSize}
+                        fontFamily='Roboto, "Segoe UI", sans-serif'
+                        opacity={0.9}
+                    >
+                        (avg: {avgKbps} kbps)
+                    </text>
+                )}
 
                 {/* Capacity label below */}
                 <text
                     x={cx}
-                    y={cy + valueFontSize + 8}
+                    y={cy + valueFontSize + (showAvg ? 8 : 2)}
                     textAnchor="middle"
                     dominantBaseline="central"
                     fill={color.label}

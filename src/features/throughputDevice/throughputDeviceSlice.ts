@@ -33,6 +33,8 @@ interface RssiState {
     pendingEnableUartTerminal: boolean;
     enableProgressBars: boolean;
     pendingEnableProgressBars: boolean;
+    showAverageThroughput: boolean;
+    pendingShowAverageThroughput: boolean;
     oneActivePhyEnabled: boolean;
     pendingOneActivePhyEnabled: boolean;
     oneActivePhySequenceMask: boolean[];
@@ -51,6 +53,8 @@ interface RssiState {
     serialPort?: SerialPort<AutoDetectTypes>;
     rssiDevice?: RssiDevice;
     didRunProgrammingInCurrentSetup: boolean;
+    hasStarted: boolean;
+    wasStopped: boolean;
     showCompanionProgrammingPrompt: boolean;
     mainProgrammedSerial?: string;
     companionTargetSerial?: string;
@@ -68,7 +72,7 @@ const initialState: RssiState = {
     dataMax: [],
     delay: 5,
     virtualFileSizeMb: 100,
-    pendingVirtualFileSizeMb: 100,
+    pendingVirtualFileSizeMb: 3,
     connectionIntervalUnits: 40,
     packetSizeBytes: 247,
     enableGraphOnSinglePhy: true,
@@ -77,8 +81,10 @@ const initialState: RssiState = {
     pendingEnableUartTerminal: false,
     enableProgressBars: true,
     pendingEnableProgressBars: true,
-    oneActivePhyEnabled: false,
-    pendingOneActivePhyEnabled: false,
+    showAverageThroughput: true,
+    pendingShowAverageThroughput: true,
+    oneActivePhyEnabled: true,
+    pendingOneActivePhyEnabled: true,
     oneActivePhySequenceMask: [false, false, false, false, false, false, false],
     oneActivePhyCurrentIndex: -1,
     oneActivePhySequenceActive: false,
@@ -93,6 +99,8 @@ const initialState: RssiState = {
     uartLog: [],
     fileTransferResetTrigger: 0,
     didRunProgrammingInCurrentSetup: false,
+    hasStarted: false,
+    wasStopped: false,
     showCompanionProgrammingPrompt: false,
     companionTargetSerial: 'none',
     isCompanionProgrammingInProgress: false,
@@ -159,6 +167,9 @@ const rssiSlice = createSlice({
             state.enableProgressBars = initialState.enableProgressBars;
             state.pendingEnableProgressBars =
                 initialState.pendingEnableProgressBars;
+            state.showAverageThroughput = initialState.showAverageThroughput;
+            state.pendingShowAverageThroughput =
+                initialState.pendingShowAverageThroughput;
             state.oneActivePhyEnabled = initialState.oneActivePhyEnabled;
             state.pendingOneActivePhyEnabled =
                 initialState.pendingOneActivePhyEnabled;
@@ -219,6 +230,14 @@ const rssiSlice = createSlice({
 
         applyEnableProgressBars: state => {
             state.enableProgressBars = state.pendingEnableProgressBars;
+        },
+
+        setShowAverageThroughput: (state, action: PayloadAction<boolean>) => {
+            state.pendingShowAverageThroughput = action.payload;
+        },
+
+        applyShowAverageThroughput: state => {
+            state.showAverageThroughput = state.pendingShowAverageThroughput;
         },
 
         setOneActivePhyEnabled: (state, action: PayloadAction<boolean>) => {
@@ -426,6 +445,15 @@ const rssiSlice = createSlice({
             state.lastFlashedCompanionSerial = action.payload;
         },
 
+        markDemoStarted: state => {
+            state.hasStarted = true;
+            state.wasStopped = false;
+        },
+
+        markDemoStopped: state => {
+            state.wasStopped = true;
+        },
+
         markDeviceSetupAttemptStarted: state => {
             state.didRunProgrammingInCurrentSetup = false;
         },
@@ -483,6 +511,10 @@ export const getEnableProgressBars = (state: RootState) =>
     state.app.rssi.enableProgressBars;
 export const getPendingEnableProgressBars = (state: RootState) =>
     state.app.rssi.pendingEnableProgressBars;
+export const getShowAverageThroughput = (state: RootState) =>
+    state.app.rssi.showAverageThroughput;
+export const getPendingShowAverageThroughput = (state: RootState) =>
+    state.app.rssi.pendingShowAverageThroughput;
 export const getOneActivePhyEnabled = (state: RootState) =>
     state.app.rssi.oneActivePhyEnabled;
 export const getPendingOneActivePhyEnabled = (state: RootState) =>
@@ -527,6 +559,8 @@ export const getLastFlashedCompanionSerial = (state: RootState) =>
     state.app.rssi.lastFlashedCompanionSerial;
 export const getDidRunProgrammingInCurrentSetup = (state: RootState) =>
     state.app.rssi.didRunProgrammingInCurrentSetup;
+export const getHasStarted = (state: RootState) => state.app.rssi.hasStarted;
+export const getWasStopped = (state: RootState) => state.app.rssi.wasStopped;
 
 export const {
     setSerialPort,
@@ -548,6 +582,8 @@ export const {
     applyEnableUartTerminal,
     setEnableProgressBars,
     applyEnableProgressBars,
+    setShowAverageThroughput,
+    applyShowAverageThroughput,
     setOneActivePhyEnabled,
     applyOneActivePhyEnabled,
     initializeOneActivePhySequence,
@@ -570,6 +606,8 @@ export const {
     setCompanionProgrammingStatus,
     setIsCompanionProgrammingInProgress,
     setLastFlashedCompanionSerial,
+    markDemoStarted,
+    markDemoStopped,
     markDeviceSetupAttemptStarted,
     clearDeviceSetupAttempt,
     showStartupDialog,

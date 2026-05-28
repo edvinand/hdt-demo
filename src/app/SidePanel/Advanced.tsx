@@ -22,17 +22,20 @@ import {
     getPendingOneActivePhyEnabled,
     getPendingEnableProgressBars,
     getPendingEnableUartTerminal,
+    getPendingShowAverageThroughput,
     getPendingVirtualFileSizeMb,
     getRssiDevice,
     setConnectionIntervalUnits,
     setEnableGraphOnSinglePhy,
     setEnableProgressBars,
     setEnableUartTerminal,
+    setShowAverageThroughput,
     setOneActivePhyEnabled,
     setIsPhyFrozen,
     setPacketSizeBytes,
     setPendingVirtualFileSizeMb,
 } from '../../features/throughputDevice/throughputDeviceSlice';
+import Delay from './Delay';
 import ToggleLed from './ToggleLed';
 
 const clamp = (value: number, min: number, max: number) =>
@@ -55,6 +58,7 @@ export default () => {
     const oneActivePhyEnabled = useSelector(getPendingOneActivePhyEnabled);
     const enableProgressBars = useSelector(getPendingEnableProgressBars);
     const enableUartTerminal = useSelector(getPendingEnableUartTerminal);
+    const showAverageThroughput = useSelector(getPendingShowAverageThroughput);
     const [isFreezeCommandInFlight, setIsFreezeCommandInFlight] =
         useState(false);
 
@@ -108,6 +112,13 @@ export default () => {
         [dispatch],
     );
 
+    const setShowAverage = useCallback(
+        (enabled: boolean) => {
+            dispatch(setShowAverageThroughput(enabled));
+        },
+        [dispatch],
+    );
+
     const onToggleFreezePhy = useCallback(async () => {
         if (!rssiDevice || isFreezeCommandInFlight) return;
 
@@ -142,7 +153,7 @@ export default () => {
                 <NumberInput
                     showSlider
                     minWidth
-                    range={{ min: 1, max: 100 }}
+                    range={{ min: 1, max: 100, step: 1, decimals: 2 }}
                     value={pendingVirtualFileSizeMb}
                     onChange={setFileSize}
                     label="Virtual file size"
@@ -178,6 +189,7 @@ export default () => {
                     unit="Bytes"
                 />
             </Overlay>
+            <Delay />
             <div className="tw-mt-2">
                 <Overlay
                     tooltipId="enable-graph-tooltip"
@@ -232,7 +244,25 @@ export default () => {
                         isToggled={oneActivePhyEnabled}
                         onToggle={setOneActivePhy}
                     >
-                        One active PHY
+                        Round Robin
+                    </Toggle>
+                </Overlay>
+            </div>
+            <div className="tw-mt-2">
+                <Overlay
+                    tooltipId="show-average-throughput-tooltip"
+                    tooltipChildren={
+                        <p>
+                            Show average throughput for the ongoing file transfer.
+                        </p>
+                    }
+                    placement="right"
+                >
+                    <Toggle
+                        isToggled={showAverageThroughput}
+                        onToggle={setShowAverage}
+                    >
+                        Show average throughput
                     </Toggle>
                 </Overlay>
             </div>

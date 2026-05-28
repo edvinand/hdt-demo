@@ -6,16 +6,39 @@
 
 import React from 'react';
 import { useSelector } from 'react-redux';
-import { Button, Overlay } from '@nordicsemiconductor/pc-nrfconnect-shared';
+import {
+    type Device,
+    Button,
+    Overlay,
+    getDevices,
+    selectedDevice,
+} from '@nordicsemiconductor/pc-nrfconnect-shared';
 
 import {
     getIsConnected,
     getRssiDevice,
+    getCompanionTargetSerial,
 } from '../../features/throughputDevice/throughputDeviceSlice';
+import type { RssiDevice } from '../../features/throughputDevice/createThroughputDevice';
 
 export default () => {
     const isConnected = useSelector(getIsConnected);
-    const rssiDevice = useSelector(getRssiDevice);
+    const rssiDevice = useSelector(getRssiDevice) as RssiDevice | undefined;
+    const device = useSelector(selectedDevice) as Device | undefined;
+    const companionTargetSerial = useSelector(getCompanionTargetSerial);
+    const connectedDevices = useSelector(getDevices);
+    const mainBoardVersion = device?.devkit?.boardVersion?.toUpperCase();
+    const serialLedName = mainBoardVersion === 'PCA10056' ? 'LED3' : 'LED2';
+    const remoteDevice = connectedDevices.find(
+        connectedDevice => connectedDevice.serialNumber === companionTargetSerial,
+    );
+    const remoteBoardVersion =
+        remoteDevice?.devkit?.boardVersion?.toUpperCase() ??
+        (connectedDevices.length === 1 && mainBoardVersion === 'PCA10056'
+            ? 'PCA10056'
+            : undefined);
+    const remoteLedName =
+        remoteBoardVersion === 'PCA10056' ? 'LED3' : 'LED2';
     const onToggleSerialLed = () => rssiDevice?.sendUartCommand('led0');
     const onToggleRemoteLed = () => rssiDevice?.sendUartCommand('led1');
 
@@ -25,9 +48,9 @@ export default () => {
                 tooltipId="toggle-led-serial-tooltip"
                 tooltipChildren={
                     <p>
-                        Toggle the LED on the device connected via serial.
-                        Used to see what device that acts as the peripheral
-                        device.
+                        Toggle {serialLedName} on the device connected via
+                        serial. Used to see what device that acts as the
+                        peripheral device.
                     </p>
                 }
                 placement="right"
@@ -45,8 +68,9 @@ export default () => {
                 tooltipId="toggle-led-remote-tooltip"
                 tooltipChildren={
                     <p>
-                        Toggle the LED on the remote device connected via BLE.
-                        Used to see what device you are connected to (if any).
+                        Toggle {remoteLedName} on the remote device connected
+                        via BLE. Used to see what device you are connected to
+                        (if any).
                     </p>
                 }
                 placement="right"

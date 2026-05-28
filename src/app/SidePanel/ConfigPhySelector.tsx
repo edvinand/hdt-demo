@@ -44,7 +44,7 @@ const ConfigPhySelector = () => {
                     <div
                         key={label}
                         className={`tw-flex tw-items-center tw-justify-between${
-                            unsupported ? 'tw-opacity-50' : ''
+                            unsupported ? ' tw-opacity-50' : ''
                         }`}
                     >
                         <span className="tw-inline-block tw-w-24 tw-whitespace-nowrap">

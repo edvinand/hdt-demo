@@ -87,18 +87,24 @@ const ProgressBar = ({
 interface GaugeViewProps {
     /** Rendered above gauges when only a single PHY is active */
     singlePhyTopContent?: React.ReactNode;
+    displayThroughputKbps?: number[];
     fileTransferProgress?: number[];
     fileTransferElapsedMs?: number[];
     bestCompletedElapsedMs?: number[];
+    avgThroughputKbps?: number[];
+    showAverageThroughput?: boolean;
     virtualFileSizeMb?: number;
     enableProgressBars?: boolean;
 }
 
 const GaugeView = ({
     singlePhyTopContent,
+    displayThroughputKbps = [],
     fileTransferProgress = [],
     fileTransferElapsedMs = [],
     bestCompletedElapsedMs = [],
+    avgThroughputKbps = [],
+    showAverageThroughput = true,
     virtualFileSizeMb = 100,
     enableProgressBars = true,
 }: GaugeViewProps) => {
@@ -155,8 +161,14 @@ const GaugeView = ({
                 >
                     <div style={{ width: '100%', maxWidth: 320, aspectRatio: '1' }}>
                         <ThroughputGauge
-                            currentKbps={phyThroughput[phyIdx] ?? 0}
+                            currentKbps={
+                                displayThroughputKbps[phyIdx] ??
+                                phyThroughput[phyIdx] ??
+                                0
+                            }
                             maxRecordedKbps={phyMaxThroughput[phyIdx] ?? 0}
+                            avgKbps={avgThroughputKbps[phyIdx] ?? 0}
+                            showAvg={showAverageThroughput}
                             capacityKbps={PHY_MAX_KBPS[phyIdx] ?? 1000}
                             maxSharedCapacityKbps={maxSharedCapacity}
                             phyLabel={PHY_LABELS[phyIdx]}
@@ -210,8 +222,14 @@ const GaugeView = ({
         >
             <div style={{ width: '100%', maxWidth: 220, aspectRatio: '1' }}>
                 <ThroughputGauge
-                    currentKbps={phyThroughput[phyIdx] ?? 0}
+                    currentKbps={
+                        displayThroughputKbps[phyIdx] ??
+                        phyThroughput[phyIdx] ??
+                        0
+                    }
                     maxRecordedKbps={phyMaxThroughput[phyIdx] ?? 0}
+                    avgKbps={avgThroughputKbps[phyIdx] ?? 0}
+                    showAvg={showAverageThroughput}
                     maxSharedCapacityKbps={maxSharedCapacity}
                     capacityKbps={PHY_MAX_KBPS[phyIdx] ?? 1000}
                     phyLabel={PHY_LABELS[phyIdx]}

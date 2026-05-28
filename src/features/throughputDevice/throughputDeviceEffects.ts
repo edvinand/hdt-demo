@@ -15,6 +15,7 @@ import {
     jprogDeviceSetup,
     logger,
     prepareDevice,
+    selectedDevice,
     sdfuDeviceSetup,
 } from '@nordicsemiconductor/pc-nrfconnect-shared';
 import { NrfutilDeviceLib } from '@nordicsemiconductor/pc-nrfconnect-shared/nrfutil/device';
@@ -23,14 +24,25 @@ import { readFileSync } from 'fs';
 import { SerialPort } from 'serialport';
 
 import {
+    applyCurrentPhyEnabled,
+    applyEnableGraphOnSinglePhy,
+    applyEnableProgressBars,
+    applyEnableUartTerminal,
+    applyOneActivePhyEnabled,
+    applyShowAverageThroughput,
+    applyVirtualFileSizeMb,
     clearCompanionProgrammingError,
     clearDeviceSetupAttempt,
+    clearOneActivePhySequence,
     clearSerialPort,
+    initializeOneActivePhySequence,
+    markDemoStarted,
     hideCompanionProgrammingPrompt,
     markDeviceSetupAttemptStarted,
     setCompanionProgrammingError,
     setCompanionTargetSerial,
     setIsCompanionProgrammingInProgress,
+    setIsPaused,
     setLastFlashedCompanionSerial,
     setSerialPort,
     showCompanionProgrammingPrompt,
@@ -174,6 +186,85 @@ const matchingFirmwareForDevice = (
         );
     });
 };
+
+const resetDeviceSafely = async (device: Device, role: string) => {
+    try {
+        await NrfutilDeviceLib.reset(device);
+        logger.info(
+            `Reset ${role} (${device.serialNumber ?? 'unknown'}).`,
+        );
+    } catch (error) {
+        logger.warn(
+            `Failed to reset ${role} (${device.serialNumber ?? 'unknown'}): ${String(
+                error,
+            )}`,
+        );
+    }
+};
+
+export const writeCurrentConfigToDevice = (): AppThunk =>
+    async (dispatch, getState) => {
+        const state = getState().app.rssi;
+        if (!state.serialPort || !state.rssiDevice) {
+            return;
+        }
+
+        const device = selectedDevice(getState());
+        const isPca10056 =
+            device?.devkit?.boardVersion?.toUpperCase() === 'PCA10056';
+
+        const effectivePhyEnabled = state.phyEnabled.map(
+            (enabled: boolean, index: number) =>
+            isPca10056 && index < 5 ? false : enabled,
+        );
+
+        const firstActivePhyIndex = effectivePhyEnabled.findIndex(
+            (enabled: boolean) => enabled,
+        );
+        const oneActiveStartMask = effectivePhyEnabled.map(
+            (enabled: boolean, index: number) =>
+                enabled && index === firstActivePhyIndex,
+        );
+
+        const shouldResumeOneActiveSequence =
+            state.pendingOneActivePhyEnabled &&
+            state.wasStopped &&
+            state.oneActivePhySequenceActive &&
+            state.oneActivePhyCurrentIndex >= 0;
+
+        const phyMaskForWrite = state.pendingOneActivePhyEnabled
+            ? shouldResumeOneActiveSequence
+                ? state.appliedPhyEnabled
+                : oneActiveStartMask
+            : effectivePhyEnabled;
+
+        dispatch(setIsPaused(false));
+        dispatch(applyVirtualFileSizeMb());
+        dispatch(applyEnableGraphOnSinglePhy());
+        dispatch(applyEnableProgressBars());
+        dispatch(applyEnableUartTerminal());
+        dispatch(applyShowAverageThroughput());
+        dispatch(applyOneActivePhyEnabled());
+
+        if (state.pendingOneActivePhyEnabled) {
+            if (!shouldResumeOneActiveSequence) {
+                dispatch(initializeOneActivePhySequence(effectivePhyEnabled));
+            }
+        } else {
+            dispatch(clearOneActivePhySequence());
+            dispatch(applyCurrentPhyEnabled());
+        }
+
+        await state.rssiDevice.writeConfig({
+            delay: state.delay,
+            phyEnabled: phyMaskForWrite,
+            virtualFileSizeMb: state.pendingVirtualFileSizeMb,
+            connectionIntervalUnits: state.connectionIntervalUnits,
+            packetSizeBytes: state.packetSizeBytes,
+        });
+
+        dispatch(markDemoStarted());
+    };
 
 const jprogDeviceSetupWithHexTailVerify = (
     firmware: JprogEntry[],
@@ -364,17 +455,14 @@ export const setupDeviceAndOpen =
                 prepareDevice(
                     device,
                     deviceSetupConfig,
-                    programmedDevice => {
+                    async programmedDevice => {
+                        await resetDeviceSafely(programmedDevice, 'main device');
                         dispatch(openDevice(programmedDevice));
-                        if (
-                            getState().app.rssi.didRunProgrammingInCurrentSetup
-                        ) {
-                            dispatch(
-                                openCompanionProgrammingPrompt(
-                                    programmedDevice.serialNumber ?? '',
-                                ),
-                            );
-                        }
+                        dispatch(
+                            openCompanionProgrammingPrompt(
+                                programmedDevice.serialNumber ?? '',
+                            ),
+                        );
                         dispatch(clearDeviceSetupAttempt());
                     },
                     reason => {
@@ -397,15 +485,14 @@ export const setupDeviceAndOpen =
             prepareDevice(
                 device,
                 deviceSetupConfig,
-                programmedDevice => {
+                async programmedDevice => {
+                    await resetDeviceSafely(programmedDevice, 'main device');
                     dispatch(openDevice(programmedDevice));
-                    if (getState().app.rssi.didRunProgrammingInCurrentSetup) {
-                        dispatch(
-                            openCompanionProgrammingPrompt(
-                                programmedDevice.serialNumber ?? '',
-                            ),
-                        );
-                    }
+                    dispatch(
+                        openCompanionProgrammingPrompt(
+                            programmedDevice.serialNumber ?? '',
+                        ),
+                    );
                     dispatch(clearDeviceSetupAttempt());
                 },
                 reason => {
@@ -431,17 +518,14 @@ export const recoverHex =
                 prepareDevice(
                     device,
                     deviceSetupConfig,
-                    programmedDevice => {
+                    async programmedDevice => {
+                        await resetDeviceSafely(programmedDevice, 'main device');
                         dispatch(openDevice(programmedDevice));
-                        if (
-                            getState().app.rssi.didRunProgrammingInCurrentSetup
-                        ) {
-                            dispatch(
-                                openCompanionProgrammingPrompt(
-                                    programmedDevice.serialNumber ?? '',
-                                ),
-                            );
-                        }
+                        dispatch(
+                            openCompanionProgrammingPrompt(
+                                programmedDevice.serialNumber ?? '',
+                            ),
+                        );
                         dispatch(clearDeviceSetupAttempt());
                     },
                     reason => {
@@ -579,6 +663,10 @@ export const confirmCompanionProgramming =
                     if (readHex === tail.bytesHex) {
                         logger.info(
                             `Companion device (${selectedSerial}) already has correct firmware — skipping programming.`,
+                        );
+                        await resetDeviceSafely(
+                            selectedDevice,
+                            'companion device',
                         );
                         dispatch(setIsCompanionProgrammingInProgress(false));
                         dispatch(

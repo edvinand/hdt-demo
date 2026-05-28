@@ -62,10 +62,23 @@ x Wait on 100% until all are completed, then reset the progress
 x Packet size: N "Bytes"
 x One by one PHY (option in "advanced")
 x "PHY Datarate" instead of "Peak Throughput"
-- Explain something about connection parameters 
+x Explain something about connection parameters 
 x Name: HDT Demo -> Bluetooth HDT Demo
 x Start/stop/reset
 x Check if the device is already programmed
-- Are you sure you want to program (companion device)
+x Are you sure you want to program (companion device)
 x File transfer in gauge view
-
+x Mouse-Hover-over helpers.
+- Change default parameters:
+	- file size
+	- 
+x one active PHY as default
+x Average throughput for the current file transfer
+x One active PHY -> Round Robin
+x BUG: Always Add programming prompts for both devices. 
+x Change ?
+x Add what LED it blinks.
+- decimal numbers when typing file size.
+x Load default config should trigger a start/restart
+x reset both devices on startup.
+? Startup problems

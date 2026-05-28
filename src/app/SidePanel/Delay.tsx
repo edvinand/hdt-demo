@@ -33,7 +33,7 @@ export default () => {
                 tooltipChildren={
                     <p>
                         The time it spends on a single PHY before cycling
-                        through to the next active PHY.
+                        through to the next active PHY. (Disabled if Round Robin is enabled)
                     </p>
                 }
                 placement="right"

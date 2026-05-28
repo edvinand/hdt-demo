@@ -41,6 +41,7 @@ import {
     getDelay,
     getDisplayType,
     getEnableGraphOnSinglePhy,
+    getPendingShowAverageThroughput,
     getOneActivePhyCurrentIndex,
     getOneActivePhyEnabled,
     getOneActivePhySequenceActive,
@@ -110,10 +111,14 @@ const throughputLabelPlugin = {
                 : undefined;
         const showProgressBars =
             fileTransferDataset?.showProgressBars !== false;
+        const showAvgThroughput =
+            fileTransferDataset?.showAvgThroughput !== false;
         const fileTransferData: number[] =
             (fileTransferDataset?.data as number[]) ?? [];
         const elapsedData: number[] =
             (fileTransferDataset?.elapsedMs as number[]) ?? [];
+        const avgData: number[] =
+            (fileTransferDataset?.avgKbps as number[]) ?? [];
         const fileSizeMbData: number[] =
             (fileTransferDataset?.fileSizeMb as number[]) ?? [];
 
@@ -205,7 +210,14 @@ const throughputLabelPlugin = {
 
             // Throughput label below the throughput bar
             const throughputTextY = yBottom + labelGap;
-            const label = `${safeValue} / ${safeMax} kbps`;
+            const rawAvg = avgData[index];
+            const safeAvg =
+                rawAvg === undefined || rawAvg === null || Number.isNaN(rawAvg)
+                    ? 0
+                    : rawAvg;
+            const label = showAvgThroughput
+                ? `${safeValue} / ${safeMax} kbps (avg: ${safeAvg} kbps)`
+                : `${safeValue} / ${safeMax} kbps`;
 
             ctx.save();
             ctx.font = `bold ${throughputFontSize}px ${ROBOTO_FONT_FAMILY}`;
@@ -344,6 +356,7 @@ export default () => {
     const fileTransferResetTrigger = useSelector(getFileTransferResetTrigger);
     const enableGraphOnSinglePhy = useSelector(getEnableGraphOnSinglePhy);
     const enableProgressBars = useSelector(getEnableProgressBars);
+    const showAverageThroughput = useSelector(getPendingShowAverageThroughput);
     const enableUartTerminal = useSelector(getPendingEnableUartTerminal);
     const oneActivePhyEnabled = useSelector(getOneActivePhyEnabled);
     const oneActivePhySequenceMask = useSelector(getOneActivePhySequenceMask);
@@ -405,6 +418,9 @@ export default () => {
     const [bestCompletedElapsedMs, setBestCompletedElapsedMs] = useState<
         number[]
     >(() => new Array(phyThroughput.length).fill(0));
+    const [avgThroughputKbps, setAvgThroughputKbps] = useState<number[]>(
+        () => new Array(phyThroughput.length).fill(0),
+    );
     const [singlePhyHistory, setSinglePhyHistory] = useState<
         ThroughputSample[]
     >([]);
@@ -420,6 +436,15 @@ export default () => {
     const completedThroughputAt100Ref = useRef<number[]>(
         new Array(phyThroughput.length).fill(0),
     );
+    const completedAvgAt100Ref = useRef<number[]>(
+        new Array(phyThroughput.length).fill(0),
+    );
+    const sumThroughputKbpsMsRef = useRef<number[]>(
+        new Array(phyThroughput.length).fill(0),
+    );
+    const activeTimeMsRef = useRef<number[]>(
+        new Array(phyThroughput.length).fill(0),
+    );
 
     const visibleThroughputDisplay = enabledIndices.map((index, rowIndex) => {
         if (
@@ -431,6 +456,44 @@ export default () => {
         }
 
         return completedThroughputAt100Ref.current[index] ?? 0;
+    });
+
+    const visibleAvgThroughputDisplay = enabledIndices.map(index => {
+        if (
+            !oneActivePhyEnabled ||
+            !oneActivePhySequenceActive ||
+            (fileTransferProgress[index] ?? 0) < 100
+        ) {
+            return avgThroughputKbps[index] ?? 0;
+        }
+
+        return completedAvgAt100Ref.current[index] ?? 0;
+    });
+
+    const gaugeThroughputDisplayByPhy = activeThroughput.map(
+        (throughput, index) => {
+            if (
+                oneActivePhyEnabled &&
+                oneActivePhySequenceActive &&
+                (fileTransferProgress[index] ?? 0) >= 100
+            ) {
+                return completedThroughputAt100Ref.current[index] ?? 0;
+            }
+
+            return throughput ?? 0;
+        },
+    );
+
+    const gaugeAvgDisplayByPhy = avgThroughputKbps.map((avg, index) => {
+        if (
+            oneActivePhyEnabled &&
+            oneActivePhySequenceActive &&
+            (fileTransferProgress[index] ?? 0) >= 100
+        ) {
+            return completedAvgAt100Ref.current[index] ?? 0;
+        }
+
+        return avg ?? 0;
     });
 
     useEffect(() => {
@@ -480,6 +543,11 @@ export default () => {
         setFileTransferElapsedMs(prevElapsed => prevElapsed.map(() => 0));
         completedThroughputAt100Ref.current =
             completedThroughputAt100Ref.current.map(() => 0);
+        completedAvgAt100Ref.current = completedAvgAt100Ref.current.map(() => 0);
+        sumThroughputKbpsMsRef.current =
+            sumThroughputKbpsMsRef.current.map(() => 0);
+        activeTimeMsRef.current = activeTimeMsRef.current.map(() => 0);
+        setAvgThroughputKbps(prevAvg => prevAvg.map(() => 0));
         setSinglePhyHistory([]);
         lastSampledUpdatedAtRef.current = 0;
         setSinglePhyHistoryArmed(shouldShowSinglePhyGraph);
@@ -563,8 +631,14 @@ export default () => {
             return value;
         });
 
+        const nextSumThroughputKbpsMs = [...sumThroughputKbpsMsRef.current];
+        const nextActiveTimeMs = [...activeTimeMsRef.current];
+
         if (shouldResetCurrentActiveBeforeRestart) {
             completedThroughputAt100Ref.current[activeTransferPhyIndex] = 0;
+            completedAvgAt100Ref.current[activeTransferPhyIndex] = 0;
+            nextSumThroughputKbpsMs[activeTransferPhyIndex] = 0;
+            nextActiveTimeMs[activeTransferPhyIndex] = 0;
         }
 
         const progressActiveIndices =
@@ -627,8 +701,55 @@ export default () => {
             },
         );
 
+        enabledIndices.forEach(index => {
+            if (!enabledIndexSet.has(index)) {
+                return;
+            }
+
+            const throughputKbps = activeThroughput[index] ?? 0;
+            const gatedThroughputKbps =
+                waitingForActivePhyReport && index === activeTransferPhyIndex
+                    ? 0
+                    : throughputKbps;
+            const currentProgress = baselineProgress[index] ?? 0;
+            const nextProgress = nextFileTransferProgress[index] ?? 0;
+
+            // Keep average frozen at 0 while progress is still below 1%.
+            // This excludes startup/warm-up time from the average.
+            if (nextProgress < 1) {
+                nextSumThroughputKbpsMs[index] = 0;
+                nextActiveTimeMs[index] = 0;
+                return;
+            }
+
+            if (currentProgress >= 100) {
+                return;
+            }
+
+            nextSumThroughputKbpsMs[index] += gatedThroughputKbps * dtMs;
+            nextActiveTimeMs[index] += dtMs;
+        });
+
+        const nextAvgThroughputKbps = [...avgThroughputKbps];
+        enabledIndices.forEach(index => {
+            const nextProgress = nextFileTransferProgress[index] ?? 0;
+            if (nextProgress < 1) {
+                nextAvgThroughputKbps[index] = 0;
+                return;
+            }
+
+            const activeMs = nextActiveTimeMs[index] ?? 0;
+            nextAvgThroughputKbps[index] =
+                activeMs > 0
+                    ? Math.round((nextSumThroughputKbpsMs[index] ?? 0) / activeMs)
+                    : 0;
+        });
+
         setFileTransferProgress(nextFileTransferProgress);
         setFileTransferElapsedMs(nextFileTransferElapsedMs);
+        setAvgThroughputKbps(nextAvgThroughputKbps);
+        sumThroughputKbpsMsRef.current = nextSumThroughputKbpsMs;
+        activeTimeMsRef.current = nextActiveTimeMs;
 
         setBestCompletedElapsedMs(prevBest =>
             prevBest.map((best, index) => {
@@ -674,6 +795,8 @@ export default () => {
             if (currentActiveProgress < 100 && nextActiveProgress >= 100) {
                 completedThroughputAt100Ref.current[activeTransferPhyIndex] =
                     activeThroughput[activeTransferPhyIndex] ?? 0;
+                completedAvgAt100Ref.current[activeTransferPhyIndex] =
+                    nextAvgThroughputKbps[activeTransferPhyIndex] ?? 0;
 
                 const activeIndices = oneActivePhySequenceMask
                     .map((enabled, index) => (enabled ? index : -1))
@@ -717,9 +840,18 @@ export default () => {
             }
             setFileTransferProgress(prevProgress => prevProgress.map(() => 0));
             setFileTransferElapsedMs(prevElapsed => prevElapsed.map(() => 0));
+            setAvgThroughputKbps(prevAvg => prevAvg.map(() => 0));
+            completedThroughputAt100Ref.current =
+                completedThroughputAt100Ref.current.map(() => 0);
+            completedAvgAt100Ref.current =
+                completedAvgAt100Ref.current.map(() => 0);
+            sumThroughputKbpsMsRef.current =
+                sumThroughputKbpsMsRef.current.map(() => 0);
+            activeTimeMsRef.current = activeTimeMsRef.current.map(() => 0);
             return;
         }
     }, [
+        avgThroughputKbps,
         now,
         activeThroughput,
         connectionIntervalUnits,
@@ -860,11 +992,16 @@ export default () => {
                         elapsedMs: enabledIndices.map(
                             index => fileTransferElapsedMs[index] ?? 0,
                         ),
+                        avgKbps: enabledIndices.map(
+                            (_, rowIndex) =>
+                                visibleAvgThroughputDisplay[rowIndex] ?? 0,
+                        ),
                         fileSizeMb: enabledIndices.map(() => virtualFileSizeMb),
                         bestCompletedMs: enabledIndices.map(
                             index => bestCompletedElapsedMs[index] ?? 0,
                         ),
                         showProgressBars: enableProgressBars,
+                        showAvgThroughput: showAverageThroughput,
                         datalabels: {
                             display: false,
                         },
@@ -973,6 +1110,9 @@ export default () => {
                             fileTransferProgress={fileTransferProgress}
                             fileTransferElapsedMs={fileTransferElapsedMs}
                             bestCompletedElapsedMs={bestCompletedElapsedMs}
+                            displayThroughputKbps={gaugeThroughputDisplayByPhy}
+                            avgThroughputKbps={gaugeAvgDisplayByPhy}
+                            showAverageThroughput={showAverageThroughput}
                             virtualFileSizeMb={virtualFileSizeMb}
                             enableProgressBars={enableProgressBars}
                             singlePhyTopContent={
@@ -1409,9 +1549,26 @@ export default () => {
                         if (isCompanionProgrammingInProgress) return;
                         dispatch(confirmCompanionProgramming());
                     }}
+                    cancelLabel="Skip"
                     onCancel={() => dispatch(cancelCompanionProgramming())}
                 >
                     <div style={{ minWidth: '400px', maxWidth: '600px' }}>
+                        {mainProgrammedSerial && (
+                            <div
+                                style={{
+                                    marginBottom: '12px',
+                                    padding: '8px 12px',
+                                    backgroundColor: '#eef9f1',
+                                    borderLeft: '3px solid #2b8a3e',
+                                    borderRadius: '4px',
+                                    color: '#1f6b2e',
+                                    fontSize: '14px',
+                                }}
+                            >
+                                Device {mainProgrammedSerial} is successfully
+                                programmed.
+                            </div>
+                        )}
                         {companionProgrammingError && (
                             <div
                                 style={{
