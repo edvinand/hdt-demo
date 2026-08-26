@@ -60,7 +60,7 @@ export const createRssiDevice = (serialPort: SerialPort) => {
         const intervalHex = clamp(connectionIntervalUnits, 6, 400)
             .toString(16)
             .padStart(4, '0');
-        const packetSizeHex = clamp(packetSizeBytes, 23, 247)
+        const packetSizeHex = clamp(packetSizeBytes, 23, 498)
             .toString(16)
             .padStart(4, '0');
 

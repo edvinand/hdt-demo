@@ -17,6 +17,7 @@ import {
     getWasStopped,
 } from '../../features/throughputDevice/throughputDeviceSlice';
 import { writeCurrentConfigToDevice } from '../../features/throughputDevice/throughputDeviceEffects';
+import { stopRunLog } from '../../features/throughputDevice/runLogger';
 
 export default () => {
     const dispatch = useDispatch();
@@ -55,19 +56,16 @@ export const WriteConfigButton = () => {
     }, [dispatch, isConnected]);
 
     const stopAndFreeze = useCallback(() => {
+        stopRunLog();
         dispatch(setIsPaused(true));
         dispatch(markDemoStopped());
     }, [dispatch]);
 
-    const startButtonLabel = !hasStarted
-        ? 'Start'
-                : wasStopped
-                    ? 'Start'
-                    : 'Restart';
+    const startButtonLabel = 'Send';
 
     useHotKey({
         hotKey: 'alt+w',
-        title: 'Start or restart',
+        title: 'Send',
         isGlobal: false,
         action: () => writeConfig(),
     });

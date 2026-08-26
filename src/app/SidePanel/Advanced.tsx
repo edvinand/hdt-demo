@@ -22,14 +22,18 @@ import {
     getPendingOneActivePhyEnabled,
     getPendingEnableProgressBars,
     getPendingEnableUartTerminal,
+    getPendingLogToFile,
     getPendingShowAverageThroughput,
+    getPendingShowLiveThroughput,
     getPendingVirtualFileSizeMb,
     getRssiDevice,
     setConnectionIntervalUnits,
     setEnableGraphOnSinglePhy,
     setEnableProgressBars,
     setEnableUartTerminal,
+    setLogToFile,
     setShowAverageThroughput,
+    setShowLiveThroughput,
     setOneActivePhyEnabled,
     setIsPhyFrozen,
     setPacketSizeBytes,
@@ -59,6 +63,8 @@ export default () => {
     const enableProgressBars = useSelector(getPendingEnableProgressBars);
     const enableUartTerminal = useSelector(getPendingEnableUartTerminal);
     const showAverageThroughput = useSelector(getPendingShowAverageThroughput);
+    const showLiveThroughput = useSelector(getPendingShowLiveThroughput);
+    const logToFile = useSelector(getPendingLogToFile);
     const [isFreezeCommandInFlight, setIsFreezeCommandInFlight] =
         useState(false);
 
@@ -79,7 +85,7 @@ export default () => {
 
     const setPacketSize = useCallback(
         (value: number) => {
-            dispatch(setPacketSizeBytes(clamp(value, 23, 247)));
+            dispatch(setPacketSizeBytes(clamp(value, 23, 498)));
         },
         [dispatch],
     );
@@ -115,6 +121,20 @@ export default () => {
     const setShowAverage = useCallback(
         (enabled: boolean) => {
             dispatch(setShowAverageThroughput(enabled));
+        },
+        [dispatch],
+    );
+
+    const setShowLive = useCallback(
+        (enabled: boolean) => {
+            dispatch(setShowLiveThroughput(enabled));
+        },
+        [dispatch],
+    );
+
+    const setLogToFileEnabled = useCallback(
+        (enabled: boolean) => {
+            dispatch(setLogToFile(enabled));
         },
         [dispatch],
     );
@@ -182,7 +202,7 @@ export default () => {
                 <NumberInput
                     showSlider
                     minWidth
-                    range={{ min: 23, max: 247 }}
+                    range={{ min: 23, max: 498 }}
                     value={packetSizeBytes}
                     onChange={setPacketSize}
                     label="Packet size"
@@ -268,6 +288,26 @@ export default () => {
             </div>
             <div className="tw-mt-2">
                 <Overlay
+                    tooltipId="show-live-throughput-tooltip"
+                    tooltipChildren={
+                        <p>
+                            Show a timeline of the current throughput over the
+                            last 60 seconds below the bars, including while the
+                            demo cycles between PHYs.
+                        </p>
+                    }
+                    placement="right"
+                >
+                    <Toggle
+                        isToggled={showLiveThroughput}
+                        onToggle={setShowLive}
+                    >
+                        Show live throughput
+                    </Toggle>
+                </Overlay>
+            </div>
+            <div className="tw-mt-2">
+                <Overlay
                     tooltipId="enable-uart-tooltip"
                     tooltipChildren={
                         <p>
@@ -281,6 +321,27 @@ export default () => {
                         onToggle={setEnableTerminal}
                     >
                         Enable UART terminal
+                    </Toggle>
+                </Overlay>
+            </div>
+            <div className="tw-mt-2">
+                <Overlay
+                    tooltipId="log-to-file-tooltip"
+                    tooltipChildren={
+                        <p>
+                            When enabled, each completed virtual file transfer
+                            is appended to a timestamped log file in the app's
+                            &quot;logs&quot; folder. A new file is created every
+                            time you press Send.
+                        </p>
+                    }
+                    placement="right"
+                >
+                    <Toggle
+                        isToggled={logToFile}
+                        onToggle={setLogToFileEnabled}
+                    >
+                        Log to file
                     </Toggle>
                 </Overlay>
             </div>

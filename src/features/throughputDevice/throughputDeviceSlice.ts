@@ -35,6 +35,10 @@ interface RssiState {
     pendingEnableProgressBars: boolean;
     showAverageThroughput: boolean;
     pendingShowAverageThroughput: boolean;
+    showLiveThroughput: boolean;
+    pendingShowLiveThroughput: boolean;
+    logToFile: boolean;
+    pendingLogToFile: boolean;
     oneActivePhyEnabled: boolean;
     pendingOneActivePhyEnabled: boolean;
     oneActivePhySequenceMask: boolean[];
@@ -50,6 +54,7 @@ interface RssiState {
     displayType: 'bars' | 'gauge';
     uartLog: { direction: 'tx' | 'rx'; text: string }[];
     fileTransferResetTrigger: number;
+    bestTimeResetTrigger: number;
     serialPort?: SerialPort<AutoDetectTypes>;
     rssiDevice?: RssiDevice;
     didRunProgrammingInCurrentSetup: boolean;
@@ -83,6 +88,10 @@ const initialState: RssiState = {
     pendingEnableProgressBars: true,
     showAverageThroughput: true,
     pendingShowAverageThroughput: true,
+    showLiveThroughput: false,
+    pendingShowLiveThroughput: false,
+    logToFile: false,
+    pendingLogToFile: false,
     oneActivePhyEnabled: true,
     pendingOneActivePhyEnabled: true,
     oneActivePhySequenceMask: [false, false, false, false, false, false, false],
@@ -98,6 +107,7 @@ const initialState: RssiState = {
     displayType: 'bars',
     uartLog: [],
     fileTransferResetTrigger: 0,
+    bestTimeResetTrigger: 0,
     didRunProgrammingInCurrentSetup: false,
     hasStarted: false,
     wasStopped: false,
@@ -170,6 +180,8 @@ const rssiSlice = createSlice({
             state.showAverageThroughput = initialState.showAverageThroughput;
             state.pendingShowAverageThroughput =
                 initialState.pendingShowAverageThroughput;
+            state.logToFile = initialState.logToFile;
+            state.pendingLogToFile = initialState.pendingLogToFile;
             state.oneActivePhyEnabled = initialState.oneActivePhyEnabled;
             state.pendingOneActivePhyEnabled =
                 initialState.pendingOneActivePhyEnabled;
@@ -238,6 +250,22 @@ const rssiSlice = createSlice({
 
         applyShowAverageThroughput: state => {
             state.showAverageThroughput = state.pendingShowAverageThroughput;
+        },
+
+        setShowLiveThroughput: (state, action: PayloadAction<boolean>) => {
+            state.pendingShowLiveThroughput = action.payload;
+        },
+
+        applyShowLiveThroughput: state => {
+            state.showLiveThroughput = state.pendingShowLiveThroughput;
+        },
+
+        setLogToFile: (state, action: PayloadAction<boolean>) => {
+            state.pendingLogToFile = action.payload;
+        },
+
+        applyLogToFile: state => {
+            state.logToFile = state.pendingLogToFile;
         },
 
         setOneActivePhyEnabled: (state, action: PayloadAction<boolean>) => {
@@ -452,6 +480,17 @@ const rssiSlice = createSlice({
 
         markDemoStopped: state => {
             state.wasStopped = true;
+            state.isPaused = true;
+            state.phyThroughput = state.phyThroughput.map(() => 0);
+            state.phyUpdatedAt = state.phyUpdatedAt.map(() => 0);
+            state.phyMaxThroughput = state.phyMaxThroughput.map(() => 0);
+            state.oneActivePhySequenceMask = state.oneActivePhySequenceMask.map(
+                () => false,
+            );
+            state.oneActivePhyCurrentIndex = -1;
+            state.oneActivePhySequenceActive = false;
+            state.fileTransferResetTrigger += 1;
+            state.bestTimeResetTrigger += 1;
         },
 
         markDeviceSetupAttemptStarted: state => {
@@ -495,6 +534,8 @@ export const getPendingVirtualFileSizeMb = (state: RootState) =>
     state.app.rssi.pendingVirtualFileSizeMb;
 export const getFileTransferResetTrigger = (state: RootState) =>
     state.app.rssi.fileTransferResetTrigger;
+export const getBestTimeResetTrigger = (state: RootState) =>
+    state.app.rssi.bestTimeResetTrigger;
 export const getConnectionIntervalUnits = (state: RootState) =>
     state.app.rssi.connectionIntervalUnits;
 export const getPacketSizeBytes = (state: RootState) =>
@@ -515,6 +556,13 @@ export const getShowAverageThroughput = (state: RootState) =>
     state.app.rssi.showAverageThroughput;
 export const getPendingShowAverageThroughput = (state: RootState) =>
     state.app.rssi.pendingShowAverageThroughput;
+export const getShowLiveThroughput = (state: RootState) =>
+    state.app.rssi.showLiveThroughput;
+export const getPendingShowLiveThroughput = (state: RootState) =>
+    state.app.rssi.pendingShowLiveThroughput;
+export const getLogToFile = (state: RootState) => state.app.rssi.logToFile;
+export const getPendingLogToFile = (state: RootState) =>
+    state.app.rssi.pendingLogToFile;
 export const getOneActivePhyEnabled = (state: RootState) =>
     state.app.rssi.oneActivePhyEnabled;
 export const getPendingOneActivePhyEnabled = (state: RootState) =>
@@ -584,6 +632,10 @@ export const {
     applyEnableProgressBars,
     setShowAverageThroughput,
     applyShowAverageThroughput,
+    setShowLiveThroughput,
+    applyShowLiveThroughput,
+    setLogToFile,
+    applyLogToFile,
     setOneActivePhyEnabled,
     applyOneActivePhyEnabled,
     initializeOneActivePhySequence,

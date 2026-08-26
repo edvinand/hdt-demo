@@ -8,9 +8,11 @@
 @import '~@nordicsemiconductor/pc-nrfconnect-shared/styles';
 
 .readback-protection-warning {
+    position: relative;
     gap: 8px;
+    padding-right: 24px;
 
-    button {
+    button:not(.readback-protection-warning__close) {
         border: 1px solid #b75300;
         color: #b75300;
         background-color: white;
@@ -28,6 +30,37 @@
 
         &:active:not([disabled]) {
             background-color: color.scale(white, $lightness: -10%);
+        }
+    }
+
+    .readback-protection-warning__close {
+        position: absolute;
+        top: 0;
+        right: 0;
+        border: 0;
+        background: transparent;
+        color: #8a4b00;
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1;
+        padding: 0 4px;
+        cursor: pointer;
+
+        &:hover:not([disabled]) {
+            background: transparent;
+            color: #6f3c00;
+        }
+
+        &:focus:not([disabled]) {
+            outline: 1px solid #8a4b00;
+            outline-offset: 1px;
+            border-color: transparent !important;
+            background: transparent;
+        }
+
+        &:active:not([disabled]) {
+            background: transparent;
+            color: #5b3100;
         }
     }
 }

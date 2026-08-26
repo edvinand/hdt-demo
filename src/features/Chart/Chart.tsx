@@ -42,6 +42,7 @@ import {
     getDisplayType,
     getEnableGraphOnSinglePhy,
     getPendingShowAverageThroughput,
+    getPendingShowLiveThroughput,
     getOneActivePhyCurrentIndex,
     getOneActivePhyEnabled,
     getOneActivePhySequenceActive,
@@ -49,6 +50,7 @@ import {
     getEnableProgressBars,
     getPendingEnableUartTerminal,
     getFileTransferResetTrigger,
+    getBestTimeResetTrigger,
     getPacketSizeBytes,
     getPhyEnabled,
     getMainProgrammedSerial,
@@ -66,6 +68,7 @@ import {
     setCompanionTargetSerial,
 } from '../throughputDevice/throughputDeviceSlice';
 import UartTerminal from '../throughputDevice/UartTerminal';
+import { logPhyCompletion } from '../throughputDevice/runLogger';
 import GaugeView from './GaugeView';
 import color from './rssiColors';
 
@@ -307,6 +310,8 @@ const ANIMATION_DURATION_MS = 500;
 const MIN_GRAPH_MAX_KBPS = 100;
 const GRAPH_Y_HEADROOM = 1.1;
 const GRAPH_X_MAX_PERCENT = 100;
+const LIVE_THROUGHPUT_WINDOW_MS = 60_000;
+const LIVE_THROUGHPUT_STALE_MS = 500;
 
 type ThroughputSample = {
     progressPercent: number;
@@ -354,9 +359,11 @@ export default () => {
     const connectionIntervalUnits = useSelector(getConnectionIntervalUnits);
     const packetSizeBytes = useSelector(getPacketSizeBytes);
     const fileTransferResetTrigger = useSelector(getFileTransferResetTrigger);
+    const bestTimeResetTrigger = useSelector(getBestTimeResetTrigger);
     const enableGraphOnSinglePhy = useSelector(getEnableGraphOnSinglePhy);
     const enableProgressBars = useSelector(getEnableProgressBars);
     const showAverageThroughput = useSelector(getPendingShowAverageThroughput);
+    const showLiveThroughput = useSelector(getPendingShowLiveThroughput);
     const enableUartTerminal = useSelector(getPendingEnableUartTerminal);
     const oneActivePhyEnabled = useSelector(getOneActivePhyEnabled);
     const oneActivePhySequenceMask = useSelector(getOneActivePhySequenceMask);
@@ -425,6 +432,11 @@ export default () => {
         ThroughputSample[]
     >([]);
     const [singlePhyHistoryArmed, setSinglePhyHistoryArmed] = useState(false);
+    const [liveThroughputHistory, setLiveThroughputHistory] = useState<
+        { t: number; kbps: number }[]
+    >([]);
+    const [isReadbackWarningDismissed, setIsReadbackWarningDismissed] =
+        useState(false);
     const showStartupDialog = useSelector(getShowStartupDialog);
     const lastTickRef = useRef(now);
     const lastSampledUpdatedAtRef = useRef(0);
@@ -445,6 +457,7 @@ export default () => {
     const activeTimeMsRef = useRef<number[]>(
         new Array(phyThroughput.length).fill(0),
     );
+    const lastResetVirtualFileSizeMbRef = useRef(virtualFileSizeMb);
 
     const visibleThroughputDisplay = enabledIndices.map((index, rowIndex) => {
         if (
@@ -517,6 +530,54 @@ export default () => {
     }, []);
 
     useEffect(() => {
+        if (!showLiveThroughput) {
+            setLiveThroughputHistory([]);
+        }
+    }, [showLiveThroughput]);
+
+    // Sample the current throughput on every tick to build a rolling 60s
+    // timeline. The current throughput is whatever PHY reported most recently,
+    // and treated as 0 if nothing has been reported for the last 0.5s.
+    useEffect(() => {
+        if (!showLiveThroughput) return;
+
+        let maxUpdatedAt = 0;
+        let lastUpdatedIndex = -1;
+        phyUpdatedAt.forEach((updatedAt, index) => {
+            if (updatedAt && updatedAt > maxUpdatedAt) {
+                maxUpdatedAt = updatedAt;
+                lastUpdatedIndex = index;
+            }
+        });
+
+        const currentKbps =
+            lastUpdatedIndex >= 0 &&
+            now - maxUpdatedAt <= LIVE_THROUGHPUT_STALE_MS
+                ? (phyThroughput[lastUpdatedIndex] ?? 0)
+                : 0;
+
+        setLiveThroughputHistory(previous => {
+            const cutoff = now - LIVE_THROUGHPUT_WINDOW_MS;
+            const next = previous.filter(sample => sample.t >= cutoff);
+            next.push({ t: now, kbps: currentKbps });
+            return next;
+        });
+        // Sampled once per tick; phyThroughput/phyUpdatedAt read from closure.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [now, showLiveThroughput]);
+
+    const shouldShowReadbackProtectionWarning =
+        !!device &&
+        noData &&
+        readbackProtection !== 'NRFDL_PROTECTION_STATUS_NONE';
+
+    useEffect(() => {
+        if (!shouldShowReadbackProtectionWarning) {
+            setIsReadbackWarningDismissed(false);
+        }
+    }, [shouldShowReadbackProtectionWarning]);
+
+    useEffect(() => {
         if (
             !oneActivePhyEnabled ||
             !oneActivePhySequenceActive ||
@@ -541,6 +602,10 @@ export default () => {
     useEffect(() => {
         setFileTransferProgress(prevProgress => prevProgress.map(() => 0));
         setFileTransferElapsedMs(prevElapsed => prevElapsed.map(() => 0));
+        if (lastResetVirtualFileSizeMbRef.current !== virtualFileSizeMb) {
+            setBestCompletedElapsedMs(prevBest => prevBest.map(() => 0));
+            lastResetVirtualFileSizeMbRef.current = virtualFileSizeMb;
+        }
         completedThroughputAt100Ref.current =
             completedThroughputAt100Ref.current.map(() => 0);
         completedAvgAt100Ref.current = completedAvgAt100Ref.current.map(() => 0);
@@ -553,7 +618,14 @@ export default () => {
         setSinglePhyHistoryArmed(shouldShowSinglePhyGraph);
         // shouldShowSinglePhyGraph intentionally excluded - only reset on trigger change
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [fileTransferResetTrigger]);
+    }, [fileTransferResetTrigger, virtualFileSizeMb]);
+
+    // Clear the best completed time record when the demo is stopped.
+    useEffect(() => {
+        setBestCompletedElapsedMs(prevBest => prevBest.map(() => 0));
+        lastResetVirtualFileSizeMbRef.current = virtualFileSizeMb;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [bestTimeResetTrigger]);
 
     useEffect(() => {
         if (shouldShowSinglePhyGraph) return;
@@ -751,6 +823,23 @@ export default () => {
         sumThroughputKbpsMsRef.current = nextSumThroughputKbpsMs;
         activeTimeMsRef.current = nextActiveTimeMs;
 
+        // Log each virtual file transfer that just reached 100%. No-op unless
+        // a run log file is active (Log to file enabled on the last Send).
+        enabledIndices.forEach(index => {
+            if (!enabledIndexSet.has(index)) return;
+            const previousProgress = baselineProgress[index] ?? 0;
+            const nextProgress = nextFileTransferProgress[index] ?? 0;
+            if (previousProgress < 100 && nextProgress >= 100) {
+                logPhyCompletion({
+                    phyName: PHY_LABELS[index] ?? `PHY${index}`,
+                    virtualFileSizeMb: clampedFileSizeMb,
+                    throughputKbps: activeThroughput[index] ?? 0,
+                    avgThroughputKbps: nextAvgThroughputKbps[index] ?? 0,
+                    transferMs: nextFileTransferElapsedMs[index] ?? 0,
+                });
+            }
+        });
+
         setBestCompletedElapsedMs(prevBest =>
             prevBest.map((best, index) => {
                 if (!enabledIndexSet.has(index)) return best;
@@ -925,6 +1014,24 @@ export default () => {
         [singlePhyHistory],
     );
 
+    const liveThroughputPoints = useMemo(
+        () =>
+            liveThroughputHistory.map(sample => ({
+                x: (sample.t - now) / 1000,
+                y: sample.kbps,
+            })),
+        [liveThroughputHistory, now],
+    );
+
+    const liveThroughputMax = Math.max(
+        MIN_GRAPH_MAX_KBPS,
+        Math.ceil(
+            (Math.max(0, ...liveThroughputHistory.map(sample => sample.kbps)) *
+                GRAPH_Y_HEADROOM) /
+                100,
+        ) * 100,
+    );
+
     // Compute eligible companion devices for the prompt
     const eligibleCompanionDevices = useMemo(() => {
         if (!mainProgrammedSerial) return [];
@@ -1083,13 +1190,118 @@ export default () => {
         />
     );
 
+    const liveThroughputGraph = (
+        <Line
+            data={{
+                datasets: [
+                    {
+                        label: 'Live throughput',
+                        data: liveThroughputPoints,
+                        parsing: false,
+                        fill: true,
+                        borderColor: color.bar.highlight,
+                        backgroundColor: (
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            context: any,
+                        ) => createTransferHistoryGradient(context.chart),
+                        pointRadius: 0,
+                        pointHitRadius: 0,
+                        pointHoverRadius: 0,
+                        tension: 0.25,
+                        borderWidth: 2,
+                    },
+                ],
+            }}
+            options={
+                {
+                    responsive: true,
+                    animation: false,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { enabled: false },
+                        datalabels: { display: false },
+                        title: {
+                            display: true,
+                            text: 'Live throughput (last 60s)',
+                            align: 'start',
+                            color: color.label,
+                            font: { size: 12 },
+                            padding: { bottom: 6 },
+                        },
+                    },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            min: -(LIVE_THROUGHPUT_WINDOW_MS / 1000),
+                            max: 0,
+                            grid: {
+                                color: withOpacity(color.bar.highlight, 0.08),
+                            },
+                            border: { display: false },
+                            ticks: {
+                                color: color.label,
+                                maxTicksLimit: 7,
+                                callback: (value: string | number) =>
+                                    `${value}s`,
+                            },
+                        },
+                        y: {
+                            min: 0,
+                            max: liveThroughputMax,
+                            grid: {
+                                color: withOpacity(color.bar.highlight, 0.08),
+                            },
+                            border: { display: false },
+                            ticks: {
+                                color: color.label,
+                                precision: 0,
+                                maxTicksLimit: 3,
+                            },
+                            title: {
+                                display: true,
+                                text: 'kbps',
+                                color: color.label,
+                                font: { size: 12 },
+                            },
+                        },
+                    },
+                    elements: {
+                        line: { capBezierPoints: true },
+                    },
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                } as any
+            }
+        />
+    );
+
+    const barsView = showLiveThroughput ? (
+        <div className="d-flex flex-column h-100" style={{ gap: 12 }}>
+            <div style={{ flex: '1 1 auto', minHeight: 0 }}>{throughputBar}</div>
+            <div style={{ flex: '0 0 130px', minHeight: 0 }}>
+                {liveThroughputGraph}
+            </div>
+        </div>
+    ) : (
+        throughputBar
+    );
+
     return (
         <div className="d-flex flex-column h-100 chart-main-pane">
-            {device &&
-                noData &&
-                readbackProtection !== 'NRFDL_PROTECTION_STATUS_NONE' && (
+            {shouldShowReadbackProtectionWarning &&
+                !isReadbackWarningDismissed && (
                     <Alert variant="warning">
                         <div className="d-flex align-items-center readback-protection-warning flex-wrap">
+                            <button
+                                type="button"
+                                className="readback-protection-warning__close"
+                                aria-label="Dismiss warning"
+                                onClick={() =>
+                                    setIsReadbackWarningDismissed(true)
+                                }
+                            >
+                                X
+                            </button>
                             No data received. Unable to verify compatible
                             firmware because the selected device has readback
                             protection enabled.
@@ -1338,7 +1550,7 @@ export default () => {
                             </div>
                         </div>
                     ) : (
-                        throughputBar
+                        barsView
                     )}
                 </Main>
                 {enableUartTerminal && <UartTerminal />}

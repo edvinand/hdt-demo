@@ -28,8 +28,10 @@ import {
     applyEnableGraphOnSinglePhy,
     applyEnableProgressBars,
     applyEnableUartTerminal,
+    applyLogToFile,
     applyOneActivePhyEnabled,
     applyShowAverageThroughput,
+    applyShowLiveThroughput,
     applyVirtualFileSizeMb,
     clearCompanionProgrammingError,
     clearDeviceSetupAttempt,
@@ -47,6 +49,7 @@ import {
     setSerialPort,
     showCompanionProgrammingPrompt,
 } from './throughputDeviceSlice';
+import { startRunLog, stopRunLog } from './runLogger';
 
 type JprogEntry = {
     key: string;
@@ -244,7 +247,25 @@ export const writeCurrentConfigToDevice = (): AppThunk =>
         dispatch(applyEnableProgressBars());
         dispatch(applyEnableUartTerminal());
         dispatch(applyShowAverageThroughput());
+        dispatch(applyShowLiveThroughput());
+        dispatch(applyLogToFile());
         dispatch(applyOneActivePhyEnabled());
+
+        // A fresh Send (initial start or restart after Stop) opens a new run
+        // log file; a live reconfigure keeps writing to the current file.
+        const isFreshStart = !state.hasStarted || state.wasStopped;
+        if (isFreshStart) {
+            if (state.pendingLogToFile) {
+                startRunLog({
+                    virtualFileSizeMb: state.pendingVirtualFileSizeMb,
+                    connectionIntervalUnits: state.connectionIntervalUnits,
+                    packetSizeBytes: state.packetSizeBytes,
+                    delay: state.delay,
+                });
+            } else {
+                stopRunLog();
+            }
+        }
 
         if (state.pendingOneActivePhyEnabled) {
             if (!shouldResumeOneActiveSequence) {
@@ -378,6 +399,7 @@ export const deviceSetupConfig: DeviceSetupConfig = {
 };
 
 export const closeDevice = (): AppThunk => dispatch => {
+    stopRunLog();
     dispatch(clearSerialPort());
 };
 
@@ -436,6 +458,19 @@ export const setupDeviceAndOpen =
         const boardVersion = device.devkit?.boardVersion?.toUpperCase() ?? '';
 
         dispatch(hideCompanionProgrammingPrompt());
+
+        // WORKAROUND: see src/features/throughputDevice/workarounds.md
+        if ((device.serialNumber ?? '').startsWith('0010526')) {
+            logger.warn(
+                'Temporary workaround active: device with serial prefix 0010526 is treated as a pre-programmed nRF54L15-compatible board. See src/features/throughputDevice/workarounds.md for removal instructions.',
+            );
+            logger.warn(
+                'To use this board, manually program it (and the companion device) with the fw found in fw/hdt-nrf55fm20a.hex, then restart the app.',
+            );
+            dispatch(openDevice(device));
+            dispatch(clearDeviceSetupAttempt());
+            return;
+        }
 
         const isNrf54Family = family.includes('nrf54');
         const isNrf54Board =
