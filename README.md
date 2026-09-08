@@ -23,7 +23,7 @@ delete this file from that location.
 ## Documentation
 
 For info on how to build nRF Connect for Desktop apps, please see:
-https://nordicsemiconductor.github.io/pc-nrfconnect-docs/
+https://nordicsemi.github.io/pc-nrfconnect-docs/
 
 ## Embedded firmware
 
