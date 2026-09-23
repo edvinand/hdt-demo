@@ -8,6 +8,9 @@ import { SerialPort } from 'serialport';
 
 export type RssiDevice = Awaited<ReturnType<typeof createRssiDevice>>;
 
+export const PACKET_SIZE_MIN = 23;
+export const PACKET_SIZE_MAX = 506;
+
 const clamp = (value: number, min: number, max: number) =>
     Math.max(min, Math.min(max, value));
 
@@ -60,7 +63,11 @@ export const createRssiDevice = (serialPort: SerialPort) => {
         const intervalHex = clamp(connectionIntervalUnits, 6, 400)
             .toString(16)
             .padStart(4, '0');
-        const packetSizeHex = clamp(packetSizeBytes, 23, 498)
+        const packetSizeHex = clamp(
+            packetSizeBytes,
+            PACKET_SIZE_MIN,
+            PACKET_SIZE_MAX,
+        )
             .toString(16)
             .padStart(4, '0');
 

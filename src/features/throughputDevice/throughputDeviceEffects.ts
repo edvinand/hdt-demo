@@ -460,9 +460,9 @@ export const setupDeviceAndOpen =
         dispatch(hideCompanionProgrammingPrompt());
 
         // WORKAROUND: see src/features/throughputDevice/workarounds.md
-        if ((device.serialNumber ?? '').startsWith('0010526')) {
+        if ((device.serialNumber ?? '').startsWith('0010526') || (device.serialNumber ?? '').startsWith('0010527')) {
             logger.warn(
-                'Temporary workaround active: device with serial prefix 0010526 is treated as a pre-programmed nRF54L15-compatible board. See src/features/throughputDevice/workarounds.md for removal instructions.',
+                'Temporary workaround active: device with serial prefix 0010526 or 0010527 is treated as a pre-programmed nRF54L15-compatible board. See src/features/throughputDevice/workarounds.md for removal instructions.',
             );
             logger.warn(
                 'To use this board, manually program it (and the companion device) with the fw found in fw/hdt-nrf55fm20a.hex, then restart the app.',

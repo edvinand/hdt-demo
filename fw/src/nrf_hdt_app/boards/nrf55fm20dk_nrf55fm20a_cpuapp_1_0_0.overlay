@@ -1,0 +1,21 @@
+/*
+ * Copyright (c) 2024 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
+ */
+
+/ {
+	chosen {
+		nordic,nus-uart = &uart20;
+		zephyr,console = &uart30;
+	};
+};
+
+&uart30 {
+	status="okay";
+};
+
+/* LED2/LED3 and Button2/Button3 on the 1_0_0 board are on port 3 */
+&gpio3 {
+	status = "okay";
+};

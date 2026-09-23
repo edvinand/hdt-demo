@@ -66,7 +66,9 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #define UART_RX_TIMEOUT 50000 /* Wait for RX complete event time in microseconds. */
 #define SECURITY_REQ_DELAY K_MSEC(200)	// not used?
 #define REPORT_RATE 4 // reports per second
-#define MAX_MTU_SIZE 495
+/* Packet sizes are ATT MTUs; 506 is the largest that still fits one 510 B HDT LL PDU. */
+#define MAX_MTU_SIZE 506
+#define MAX_PAYLOAD_SIZE (MAX_MTU_SIZE - 3)
 #define MIN_PACKET_SIZE 23
 #define DEFAULT_CONN_INTERVAL_UNITS 40
 #define MIN_CONN_INTERVAL_UNITS 6
@@ -107,7 +109,6 @@ volatile int last_phy = LE1M;
 volatile bool connected_state = false;
 volatile int throughput_timer_count = 0;
 volatile int current_delay = 0;
-volatile uint32_t received_data = 0;
 volatile bool central_mode = true;
 volatile int current_mtu = 20;
 volatile bool skip_measurement = false;
@@ -125,11 +126,30 @@ static volatile bool pending_phy_valid = false;
 static uint16_t current_conn_interval_units = DEFAULT_CONN_INTERVAL_UNITS;
 static uint16_t current_conn_latency = 0;
 static uint16_t current_conn_timeout = 400;
+/* Last values reported by le_data_len_updated, for the link-state dump. */
+static uint16_t current_tx_max_len;
+static uint16_t current_tx_max_time;
+static uint16_t current_rx_max_len;
+static uint16_t current_rx_max_time;
+/* GFSK and HDT carry independent data lengths; both default to the LL minimum. */
+static uint16_t gfsk_tx_max_len = BT_HCI_LE_MAX_TX_OCTETS_MIN;
+static uint16_t hdt_tx_max_len = BT_HCI_LE_MAX_TX_OCTETS_MIN;
+/* The GFSK and HDT data lengths are negotiated separately, one after the other. */
+static enum {
+	DATA_LEN_IDLE,
+	DATA_LEN_GFSK_PENDING,
+	DATA_LEN_HDT_PENDING,
+} data_len_state;
 static bool has_known_conn_interval = false;
 static bool pending_conn_interval_update = false;
 static uint16_t pending_conn_interval_units = DEFAULT_CONN_INTERVAL_UNITS;
 
-uint8_t push_data[MAX_MTU_SIZE] = {0};
+uint8_t push_data[MAX_PAYLOAD_SIZE] = {0};
+
+/* Written from the BT RX thread, drained from the report work item. */
+static atomic_t received_data;
+/* Start of the current throughput measurement window, in uptime ms. */
+static uint32_t tp_win_start;
 
 struct uart_data_t {
 	void *fifo_reserved;
@@ -161,10 +181,79 @@ static bool mtu_exchange_started;
 
 static void send_startup_message(void);
 static void update_data_length(struct bt_conn *conn);
+static void update_hdt_data_length(struct bt_conn *conn);
 static void update_phy(struct bt_conn *conn, enum phy_type phy);
 static const char *phy2str(uint8_t phy);
 void update_remote_phy(enum phy_type phy);
 void toggle_local_led(void);
+
+/* An ATT write command costs 3 B of ATT header plus 4 B of L2CAP header on the wire. */
+#define LL_PDU_OVERHEAD 7
+
+static bool phy_is_hdt(enum phy_type phy)
+{
+	return phy <= HDT2;
+}
+
+/* Largest ATT payload that still fits in a single LL PDU on the current PHY. */
+static uint16_t effective_payload_len(void)
+{
+	uint16_t ll_max = phy_is_hdt(actual_phy) ? hdt_tx_max_len : gfsk_tx_max_len;
+	uint16_t mtu = MIN((uint16_t)current_mtu, requested_packet_size);
+	int len = (int)mtu - 3;
+
+	if (len < 1) {
+		len = 1;
+	}
+	if (ll_max > LL_PDU_OVERHEAD && len > (int)(ll_max - LL_PDU_OVERHEAD)) {
+		len = ll_max - LL_PDU_OVERHEAD;
+	}
+
+	return (uint16_t)len;
+}
+
+/* Dumps everything that determines throughput, so a slow run can be traced to
+ * the actual negotiated link parameters instead of the requested ones. */
+static void log_link_params(const char *reason)
+{
+	struct bt_conn_info info = { 0 };
+	uint32_t interval_us = 0;
+	uint16_t att_mtu = 0;
+	uint16_t payload_len;
+	uint32_t pkts_per_interval = 0;
+
+	if (!default_conn) {
+		LOG_INF("LINK [%s]: not connected", reason);
+		return;
+	}
+
+	if (bt_conn_get_info(default_conn, &info) == 0) {
+		interval_us = info.le.interval_us;
+	}
+	att_mtu = bt_gatt_get_mtu(default_conn);
+
+	payload_len = effective_payload_len();
+
+	uint16_t ll_max = phy_is_hdt(actual_phy) ? hdt_tx_max_len : gfsk_tx_max_len;
+	uint16_t ll_pdu = payload_len + LL_PDU_OVERHEAD;
+	uint16_t frags = ll_max ? ((ll_pdu + ll_max - 1) / ll_max) : 0;
+
+	if (interval_us && current_tx_max_time) {
+		pkts_per_interval = interval_us / current_tx_max_time;
+	}
+
+	LOG_INF("LINK [%s]: role %s | phy %s%s | conn_int %u us (0x%04x) lat %u timeout %u ms",
+		reason, info.role == BT_CONN_ROLE_CENTRAL ? "central (sender)" : "peripheral (receiver)",
+		phy2str(actual_phy), hdt_rate_unknown ? " (rate unknown)" : "",
+		interval_us, current_conn_interval_units, current_conn_latency,
+		current_conn_timeout * 10);
+	LOG_INF("LINK [%s]: ATT MTU %u, current_mtu %d, requested_mtu %u, %s cap %u B => payload %u B, LL PDU %u B, %u LL frag(s)",
+		reason, att_mtu, current_mtu, requested_packet_size,
+		phy_is_hdt(actual_phy) ? "HDT" : "GFSK", ll_max, payload_len, ll_pdu, frags);
+	LOG_INF("LINK [%s]: DLE tx %u B/%u us, rx %u B/%u us, ~%u max-size TX PDUs per conn interval",
+		reason, current_tx_max_len, current_tx_max_time,
+		current_rx_max_len, current_rx_max_time, pkts_per_interval);
+}
 
 static int request_conn_interval_update(uint16_t conn_interval_units)
 {
@@ -292,7 +381,7 @@ static void nus_server_data_received(struct bt_conn *conn,
 
 	/* Stripped to the bare minimum to test whether per-packet receive-side
 	 * work is the ~2.86 ms/packet bottleneck. Single writer, so no lock. */ // Temporary. Remove later.
-	received_data += len; // Temporary. Remove later.
+	atomic_add(&received_data, len); // Temporary. Remove later.
 }
 
 
@@ -303,7 +392,7 @@ static uint8_t ble_data_received(struct bt_nus_client *nus,
 	ARG_UNUSED(nus);
 	int packet_size;
 	// int err;
-	received_data += (uint32_t)len;
+	atomic_add(&received_data, len);
 	LOG_INF("received data over BLE connection (central): %d bytes", len);
 	if (len >= 4) {
 		LOG_INF("Data: 0x%02x:%02x:%02x:%02x", data[0], data[1], data[2], data[3]);
@@ -316,8 +405,14 @@ static uint8_t ble_data_received(struct bt_nus_client *nus,
 	}
 	if (data[0] == '$' && data[1] == 'S') {
 		packet_size = ((uint16_t)data[2] << 8) | data[3];
-		current_mtu = packet_size;
+		if (packet_size < MIN_PACKET_SIZE) {
+			packet_size = MIN_PACKET_SIZE;
+		} else if (packet_size > MAX_MTU_SIZE) {
+			packet_size = MAX_MTU_SIZE;
+		}
+		requested_packet_size = packet_size;
 		LOG_INF("new packet size: %d bytes", packet_size);
+		log_link_params("packet size update");
 	} else if (data[0] == '$' && data[1] == 'L' ){
 		toggle_local_led();
 	} else if (data[0] == '$' && data[1] == 'P' && len >= 3) {
@@ -628,6 +723,7 @@ static void exchange_func(struct bt_conn *conn, uint8_t err, struct bt_gatt_exch
 		LOG_INF("MTU exchange done");
 		LOG_INF("MTU size: %d", bt_gatt_get_mtu(conn));
 		current_mtu = bt_gatt_get_mtu(conn);
+		log_link_params("mtu exchange");
 	} else {
 		LOG_WRN("MTU exchange failed (err %" PRIu8 ")", err);
 	}
@@ -805,6 +901,7 @@ void on_le_param_updated(struct bt_conn *conn, uint16_t interval, uint16_t laten
 
 	LOG_INF("connection parameters updated: int 0x%04x lat 0x%04x timeout 0x%04x",
 		interval, latency, timeout);
+	log_link_params("conn param update");
 
 	//try_apply_pending_conn_interval_update();
 }
@@ -861,6 +958,8 @@ void on_le_phy_updated(struct bt_conn *conn, struct bt_conn_le_phy_info *param)
 	if (actual_phy == requested_phy) {
 		phy_change_ongoing = false;
 	}
+
+	log_link_params("phy update");
 	//BT_CONN_LE_TX_POWER_PHY_1M = 1
 	//BT_CONN_LE_TX_POWER_PHY_2M = 2
 }
@@ -871,7 +970,27 @@ void on_le_data_len_updated(struct bt_conn *conn, struct bt_conn_le_data_len_inf
     uint16_t tx_time    = info->tx_max_time;
     uint16_t rx_len     = info->rx_max_len;
     uint16_t rx_time    = info->rx_max_time;
+
+    current_tx_max_len = tx_len;
+    current_tx_max_time = tx_time;
+    current_rx_max_len = rx_len;
+    current_rx_max_time = rx_time;
+
+    /* The event carries no PHY, so attribute it to the request in flight. */
+    if (data_len_state == DATA_LEN_HDT_PENDING) {
+        hdt_tx_max_len = tx_len;
+    } else {
+        gfsk_tx_max_len = tx_len;
+    }
+
     LOG_INF("Data length updated. Length %d/%d bytes, time %d/%d us", tx_len, rx_len, tx_time, rx_time);
+    log_link_params("data len update");
+
+    if (data_len_state == DATA_LEN_GFSK_PENDING) {
+        update_hdt_data_length(conn);
+    } else {
+        data_len_state = DATA_LEN_IDLE;
+    }
 }
 
 bool on_le_param_req(struct bt_conn *conn, struct bt_le_conn_param *param)
@@ -915,6 +1034,20 @@ BT_CONN_CB_DEFINE(conn_callbacks) = {
 	.le_param_req = on_le_param_req,
 	.le_phy_updated = on_le_phy_updated,
 	.le_data_len_updated = on_le_data_len_updated,
+};
+
+/* Fires on both roles, unlike exchange_func() which only runs on the initiator. */
+static void on_att_mtu_updated(struct bt_conn *conn, uint16_t tx, uint16_t rx)
+{
+	ARG_UNUSED(conn);
+
+	current_mtu = MIN(tx, rx);
+	LOG_INF("ATT MTU updated: tx %u rx %u -> current_mtu %d", tx, rx, current_mtu);
+	log_link_params("att mtu update");
+}
+
+static struct bt_gatt_cb gatt_callbacks = {
+	.att_mtu_updated = on_att_mtu_updated,
 };
 
 static void update_phy(struct bt_conn *conn, enum phy_type phy)
@@ -978,13 +1111,26 @@ static void update_phy(struct bt_conn *conn, enum phy_type phy)
 static void update_data_length(struct bt_conn *conn)
 {
     int err;
-    struct bt_conn_le_data_len_param my_data_len = {
-        .tx_max_len = BT_GAP_DATA_LEN_MAX,
-        .tx_max_time = BT_GAP_DATA_TIME_MAX,
-    };
-    err = bt_conn_le_data_len_update(conn, &my_data_len);
+
+    data_len_state = DATA_LEN_GFSK_PENDING;
+    err = bt_conn_le_data_len_update(conn, BT_LE_DATA_LEN_PARAM_MAX);
     if (err) {
-        LOG_ERR("data_len_update failed (err %d)", err);
+        LOG_ERR("GFSK data_len_update failed (err %d)", err);
+        update_hdt_data_length(conn);
+    }
+}
+
+static void update_hdt_data_length(struct bt_conn *conn)
+{
+    int err;
+
+    data_len_state = DATA_LEN_HDT_PENDING;
+    err = bt_conn_le_data_len_update(conn,
+        BT_CONN_LE_DATA_LEN_PARAM_HDT(CONFIG_BT_CTLR_DATA_LENGTH_MAX,
+                                      BT_HCI_LE_HDT_MAX_RX_TIME_MAX));
+    if (err) {
+        data_len_state = DATA_LEN_IDLE;
+        LOG_ERR("HDT data_len_update failed (err %d)", err);
     }
 }
 
@@ -1137,6 +1283,8 @@ int main(void)
 		return 0;
 	}
 	LOG_INF("Bluetooth initialized");
+
+	bt_gatt_cb_register(&gatt_callbacks);
 
 	k_work_init(&adv_work, adv_work_handler);
 	k_work_init_delayable(&security_work, security_work_handler);
@@ -1422,6 +1570,7 @@ void handle_uart_command(struct uart_data_t nus_data)
 		}
 
 		current_delay = delay;
+		tp_win_start = k_uptime_get_32();
 		k_timer_start(&throughput_timer, K_MSEC(1000/REPORT_RATE),
 			      K_MSEC(1000/REPORT_RATE));
 
@@ -1443,9 +1592,8 @@ void handle_uart_command(struct uart_data_t nus_data)
 		}
 		
 		//skip_measurement = true;
-		received_data = 0;
-		update_packet_size(packet_size);
-		requested_packet_size = packet_size;
+		atomic_clear(&received_data);
+		update_packet_size(packet_size);		requested_packet_size = packet_size;
 
 		LOG_INF("cfg delay=%d phys=0x%02x file=%uMB i=0x%04x m=%u",
 			delay, phys, file_size_mb, conn_interval_units, packet_size);
@@ -1644,12 +1792,23 @@ void my_throughput_work_handler(struct k_work *work)
 	// 	throughput_jitter = 0;
 	// }
 	k_sem_take(&throughput_sem, K_FOREVER);
-	temp_received_data = received_data;
-	received_data = 0;
+	uint32_t now = k_uptime_get_32();
+	uint32_t elapsed_ms = now - tp_win_start;
+
+	tp_win_start = now;
+	temp_received_data = (uint32_t)atomic_clear(&received_data);
 	k_sem_give(&throughput_sem);
-	throughput = (temp_received_data * REPORT_RATE);
-	throughput_kbps = throughput * 8 / 1000; // Convert to kbps
-	LOG_INF("phy, TP: %d, %d kbps %s", actual_phy, throughput_kbps, skip_measurement ? "(skipped)" : "");
+
+	/* The work item is queued, not run, by the timer, so the window drifts. */
+	if (elapsed_ms == 0) {
+		elapsed_ms = 1;
+	}
+
+	/* bytes * 8 / ms == kbit/s */
+	throughput = (uint32_t)((uint64_t)temp_received_data * 8U / elapsed_ms);
+	throughput_kbps = (throughput > UINT16_MAX) ? UINT16_MAX : (uint16_t)throughput;
+	LOG_INF("phy, TP: %d, %d kbps (%u B in %u ms) %s", actual_phy, throughput_kbps,
+		temp_received_data, elapsed_ms, skip_measurement ? "(skipped)" : "");
 	
 	if(skip_measurement == false && phy_change_ongoing == false) {
 		update_throughput_data(actual_phy, throughput_kbps);
@@ -1688,7 +1847,7 @@ void my_push_thread(void)
 	k_sem_take(&nus_transmit_sem, K_FOREVER);
 
 	int err;
-	int payload_len = current_mtu - 3; // Subtract 3 bytes for ATT header
+	int payload_len = effective_payload_len();
 
 	uint32_t burst = 0;         /* consecutive fast (non-blocking) writes */ // Temporary. Remove later.
 	uint32_t sec_packets = 0;   /* writes in the current 1 s window */ // Temporary. Remove later.
@@ -1698,13 +1857,7 @@ void my_push_thread(void)
 	LOG_INF("sending data over BLE connection");
 	while (true)
 	{
-		payload_len = current_mtu - 3; // Update MTU in case it has changed
-		if (payload_len < 1) {
-			payload_len = 1;
-		}
-		if ((uint16_t)payload_len > requested_packet_size) {
-			payload_len = requested_packet_size;
-		}
+		payload_len = effective_payload_len();
 		//err = bt_nus_client_send(&nus_client, push_data, payload_len);
 		if (connected_state == true){
 			uint32_t t0 = k_cycle_get_32(); // Temporary. Remove later.
@@ -1728,7 +1881,8 @@ void my_push_thread(void)
 			} // Temporary. Remove later.
 
 			uint32_t now = k_uptime_get_32(); // Temporary. Remove later.
-			if (now - win_start >= 1000) { // Temporary. Remove later.
+			uint32_t elapsed_ms = now - win_start; // Temporary. Remove later.
+			if (elapsed_ms >= 1000) { // Temporary. Remove later.
 				uint32_t interval_us = 0; // Temporary. Remove later.
 				struct bt_conn_info cinfo; // Temporary. Remove later.
 
@@ -1737,11 +1891,16 @@ void my_push_thread(void)
 					interval_us = cinfo.le.interval_us; // Temporary. Remove later.
 				} // Temporary. Remove later.
 
-				uint32_t per_interval = interval_us ? // Temporary. Remove later.
-					(uint32_t)((uint64_t)sec_packets * interval_us / 1000000U) : 0; // Temporary. Remove later.
+				/* A blocking write can overrun the window, so normalise. */
+				uint32_t pkts_per_sec = (uint32_t)((uint64_t)sec_packets * 1000U / elapsed_ms); // Temporary. Remove later.
+				uint32_t kbps = (uint32_t)((uint64_t)pkts_per_sec * payload_len * 8U / 1000U); // Temporary. Remove later.
 
-				LOG_INF("TX %s: %u pkts/s, %u B/pkt, conn_int %u us, ~%u pkts/conn-interval, max burst before wall %u", // Temporary. Remove later.
-					hdt_rate_unknown ? "HDT (rate unknown)" : phy2str(actual_phy), sec_packets, payload_len, // Temporary. Remove later.
+				uint32_t per_interval = interval_us ? // Temporary. Remove later.
+					(uint32_t)((uint64_t)pkts_per_sec * interval_us / 1000000U) : 0; // Temporary. Remove later.
+
+				LOG_INF("TX %s: %u pkts/s (%u in %u ms), %u kbps, %u B/pkt, conn_int %u us, ~%u pkts/conn-interval, max burst before wall %u", // Temporary. Remove later.
+					hdt_rate_unknown ? "HDT (rate unknown)" : phy2str(actual_phy), // Temporary. Remove later.
+					pkts_per_sec, sec_packets, elapsed_ms, kbps, payload_len, // Temporary. Remove later.
 					interval_us, per_interval, sec_max_burst); // Temporary. Remove later.
 
 				sec_packets = 0; // Temporary. Remove later.

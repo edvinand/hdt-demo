@@ -83,6 +83,12 @@ def load_rows(paths):
                         "tp": float(parts[3]),
                         "avg": float(parts[4]),
                         "transfer_s": float(parts[5]) / 1000.0,
+                        "connection_interval_ms": (
+                            float(parts[6]) if len(parts) > 6 else None
+                        ),
+                        "packet_size_bytes": (
+                            float(parts[7]) if len(parts) > 7 else None
+                        ),
                         "source": path.name,
                     }
                 except ValueError:

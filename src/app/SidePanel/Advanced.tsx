@@ -39,6 +39,10 @@ import {
     setPacketSizeBytes,
     setPendingVirtualFileSizeMb,
 } from '../../features/throughputDevice/throughputDeviceSlice';
+import {
+    PACKET_SIZE_MAX,
+    PACKET_SIZE_MIN,
+} from '../../features/throughputDevice/createThroughputDevice';
 import Delay from './Delay';
 import ToggleLed from './ToggleLed';
 
@@ -85,7 +89,11 @@ export default () => {
 
     const setPacketSize = useCallback(
         (value: number) => {
-            dispatch(setPacketSizeBytes(clamp(value, 23, 498)));
+            dispatch(
+                setPacketSizeBytes(
+                    clamp(value, PACKET_SIZE_MIN, PACKET_SIZE_MAX),
+                ),
+            );
         },
         [dispatch],
     );
@@ -202,7 +210,7 @@ export default () => {
                 <NumberInput
                     showSlider
                     minWidth
-                    range={{ min: 23, max: 498 }}
+                    range={{ min: PACKET_SIZE_MIN, max: PACKET_SIZE_MAX }}
                     value={packetSizeBytes}
                     onChange={setPacketSize}
                     label="Packet size"

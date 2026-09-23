@@ -15,6 +15,7 @@ Requires: pip install pyserial
 The nRF Connect hdt-demo app must be closed (the COM port is exclusive).
 """
 
+import argparse
 import os
 import sys
 import time
@@ -27,7 +28,7 @@ import serial  # pyserial
 # Configuration (change these here only)
 # --------------------------------------------------------------------------
 # Default port; can be overridden on the command line: python overnight_test.py COM77
-PORT = "COM78"
+PORT = "COM89"
 BAUD = 115200
 
 # The single place to change the virtual file size.
@@ -36,8 +37,8 @@ FILE_SIZE_MB = 50
 # Device configuration, matching the hdt-demo defaults. The firmware clamps
 # these, so out-of-range values are corrected on the device.
 DELAY = 5                    # 0..10
-CONN_INTERVAL_UNITS = 40     # 6..400 (x1.25 ms)
-PACKET_SIZE_BYTES = 247      # 23..498 (device clamps to MTU)
+CONN_INTERVAL_UNITS = 160    # 6..400 (x1.25 ms), 200 ms default
+PACKET_SIZE_BYTES = 506      # 23..506 (device clamps to MTU)
 
 # PHY indices to cycle through, in order. HDT PHYs only (no LE 1M / LE 2M).
 # Index -> label mapping mirrors hdt-demo's PHY_LABELS.
@@ -54,6 +55,9 @@ STALE_TIMEOUT_S = 3.0
 
 # Print a status line to the console this often.
 STATUS_INTERVAL_S = 5.0
+
+# Retry the COM port after a transient USB/serial failure.
+SERIAL_RECONNECT_INTERVAL_S = 5.0
 
 # --------------------------------------------------------------------------
 # Derived constants
@@ -89,7 +93,7 @@ def build_config_command(phy_index):
     phys_hex = format(1 << phy_index, "02x")
     file_hex = format(clamp(FILE_SIZE_MB, 1, 100), "04x")
     interval_hex = format(clamp(CONN_INTERVAL_UNITS, 6, 400), "04x")
-    packet_hex = format(clamp(PACKET_SIZE_BYTES, 23, 498), "04x")
+    packet_hex = format(clamp(PACKET_SIZE_BYTES, 23, 506), "04x")
     return f"$$d{delay_hex},p{phys_hex},f{file_hex},i{interval_hex},m{packet_hex}\r"
 
 
@@ -111,7 +115,8 @@ class RunLog:
         )
         self._write_line(
             "timestamp,phy,virtual_file_size_mb,throughput_kbps,"
-            "avg_throughput_kbps,transfer_time_ms"
+            "avg_throughput_kbps,transfer_time_ms,connection_interval_ms,"
+            "packet_size_bytes"
         )
 
     def _write_line(self, line):
@@ -122,9 +127,12 @@ class RunLog:
         os.fsync(self._fh.fileno())
 
     def log_completion(self, phy_name, throughput_kbps, avg_kbps, transfer_ms):
+        connection_interval_ms = clamp(CONN_INTERVAL_UNITS, 6, 400) * 1.25
+        packet_size_bytes = clamp(PACKET_SIZE_BYTES, 23, 506)
         self._write_line(
             f"{line_timestamp(now_local())},{phy_name},{FILE_SIZE_MB},"
-            f"{round(throughput_kbps)},{round(avg_kbps)},{round(transfer_ms)}"
+            f"{round(throughput_kbps)},{round(avg_kbps)},{round(transfer_ms)},"
+            f"{connection_interval_ms:g},{packet_size_bytes}"
         )
 
     def close(self):
@@ -191,12 +199,35 @@ class PhyTransfer:
             self.active_ms += dt_ms
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Overnight HDT throughput logger")
+    parser.add_argument("port", nargs="?", default=PORT, help="Serial port")
+    parser.add_argument(
+        "-i",
+        "--interval",
+        type=float,
+        default=200.0,
+        metavar="MS",
+        help="Connection interval in milliseconds (default: 200)",
+    )
+    return parser.parse_args()
+
+
 def main():
-    port = sys.argv[1] if len(sys.argv) > 1 else PORT
+    global CONN_INTERVAL_UNITS
+
+    args = parse_args()
+    port = args.port
+    CONN_INTERVAL_UNITS = clamp(round(args.interval / 1.25), 6, 400)
 
     print(f"HDT overnight throughput logger")
     print(f"  Port          : {port} @ {BAUD} baud")
     print(f"  Virtual file  : {FILE_SIZE_MB} MB")
+    print(
+        f"  Conn interval : {clamp(CONN_INTERVAL_UNITS, 6, 400) * 1.25:g} ms "
+        f"({clamp(CONN_INTERVAL_UNITS, 6, 400)} units)"
+    )
+    print(f"  Packet size   : {clamp(PACKET_SIZE_BYTES, 23, 506)} bytes")
     print(f"  PHY sequence  : {', '.join(PHY_LABELS[i] for i in ENABLED_PHYS)}")
     print(f"  Log folder    : {LOG_DIR}")
     print("  (Close the nRF Connect hdt-demo app; the COM port is exclusive.)")
@@ -219,23 +250,60 @@ def main():
     active_phy = ENABLED_PHYS[seq_pos]
     transfer = PhyTransfer()
 
+    def reconnect_serial(exc):
+        nonlocal ser
+        print(f"WARNING: serial connection failed: {exc}", file=sys.stderr)
+        try:
+            ser.close()
+        except serial.SerialException:
+            pass
+
+        while True:
+            print(
+                f"Retrying {port} in {SERIAL_RECONNECT_INTERVAL_S:g} seconds...",
+                file=sys.stderr,
+            )
+            time.sleep(SERIAL_RECONNECT_INTERVAL_S)
+            try:
+                ser = serial.Serial(port, BAUD, timeout=0.05)
+                buffer.clear()
+                print(f"Reconnected to {port}.")
+                return
+            except serial.SerialException as reconnect_exc:
+                print(
+                    f"WARNING: could not reopen {port}: {reconnect_exc}",
+                    file=sys.stderr,
+                )
+
     def start_phy(phy):
         nonlocal transfer
         last_throughput[phy] = 0
         last_report_time[phy] = None  # gate integration until a fresh report
         transfer = PhyTransfer()
-        ser.write(build_config_command(phy).encode("ascii"))
-        ser.flush()
+        while True:
+            try:
+                ser.write(build_config_command(phy).encode("ascii"))
+                ser.flush()
+                break
+            except serial.SerialException as exc:
+                reconnect_serial(exc)
         print(f"--> {PHY_LABELS[phy]}: starting {FILE_SIZE_MB} MB transfer")
 
-    start_phy(active_phy)
-
-    last_tick = time.monotonic()
-    last_status = last_tick
-
     try:
+        start_phy(active_phy)
+        last_tick = time.monotonic()
+        last_status = last_tick
+
         while True:
-            data = ser.read(4096)
+            try:
+                data = ser.read(4096)
+            except serial.SerialException as exc:
+                reconnect_serial(exc)
+                start_phy(active_phy)
+                last_tick = time.monotonic()
+                last_status = last_tick
+                continue
+
             now = time.monotonic()
             if data:
                 buffer.extend(data)

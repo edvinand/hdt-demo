@@ -3,7 +3,7 @@ rm -rf _build_52840
 rm -rf _build_54l15
 rm -rf _build_55fm20
 rm -rf _build
-rm -rf C:\Users\edho\.nrfconnect-apps\local\hdt-demo\fw\src\central_uart
+rm -rf C:\Users\edho\.nrfconnect-apps\local\hdt-demo\fw\src\nrf_hdt_app
 cp -r ..\nrf_hdt_app C:\Users\edho\.nrfconnect-apps\local\hdt-demo\fw\src\nrf_hdt_app
 
 west build -b nrf55fm20dk/nrf55fm20a/cpuapp -d _build
